@@ -1,0 +1,559 @@
+<!doctype html>
+<html>
+  <head>
+     <meta charset="utf-8">
+     <link rel="stylesheet" href="../../../../../../../static/style.css">
+     <link rel="stylesheet" href="../../../../../../../static/pygments.css">
+     <link rel="stylesheet" href="../../../../../../../static/styles_ch.css">
+     <script>
+         MathJax = {
+            tex: {
+               inlineMath: [['$', '$'], ['\\(', '\\)']]
+            }
+         };
+     </script>
+     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+     <title>Threading</title>
+  </head>
+<body>
+  <header>
+    <h1>/ramiro/demec/ufpe</h1>
+    <nav>
+      <ul class="nav navbar-nav">
+        <li>
+          <a href="../../../../../../../">Home</a></li>
+        
+          <li><a href="../../../../../../../blog/">Blog</a></li>
+        
+          <li class="active"><a href="../../../../../../">Disciplinas</a></li>
+        
+          <li><a href="../../../../../../../bio/">Bio</a></li>
+        
+          <li><a href="../../../../../../../contato/">Contato</a></li>
+        
+      </ul>
+    </nav>
+  </header>
+  <div class="page">
+    
+  <h2>Threading</h2>
+  <h2 id="vetorizacao-da-iteracao-red-black">Vetorização da Iteração Red-Black</h2>
+<p>O motivo de vetorizarmos um programa que usa objetos do módulo <code>numpy</code> é que as operações vetoriais e matriciais são encaminhadas para rotinas compilada escritas em C, Fortran, ou até mesmo assembly, que, dependendendo da situação, podem ser ordens de magnitude mais rápidas do que o código correspondente em Python nativo.</p>
+<p>Pensando na atualização Red-Black, conceitualmente, todos os pontos de cada cor podem ser atulizados simultaneamente. Vamos usar as figuras abaixo para ajudar a definir alguns conjuntos que vão facilitar
+a notação. Cada célula representa um nó, e as extremidades estão coloridas de amarelo para mostrar que
+não estão sendo coloridas. </p>
+<p>Número par de nós
+<img alt="Red-Black-Even" src="red_black_even.png" title="Malha Red-Black com número par de nós" /></p>
+<p>Número ímpar de nós
+<img alt="Red-Black-Even" src="red_black_odd.png" title="Malha Red-Black com número par de nós" /></p>
+<p>Os conjuntos de índices são, o conjunto dos nós vermelhos</p>
+<p>$$ R = 1,3,\ldots, M_R$$
+e
+$$ B = 2, 4, \ldots, M_B, $$</p>
+<p>onde $M_R$ e $M_B$ são os valores máximos do índice de cada subconjunto. </p>
+<p>Por inspeção direta, podemos ver que $M_R = N-3$  e $M_B = N-2$ se $N$ é par e
+$M_R = N-2$  e $M_B = N-3$ se $N$ é ímpar, onde $N$ é o número total de nós.</p>
+<p>Vamos também definir os conjuntos imediatamente à esquerda e à direita de cada um destes,</p>
+<p>$$ R_{{}+1} = 2,4,\ldots, M_R+1, \quad R_{{}-1} = 0,2,\ldots, M_R-1$$
+e
+$$ B_{{}+1} = 3,5,\ldots, M_B+1, \quad B_{{}-1} = 1,3,\ldots, M_B-1.$$</p>
+<p>A atualização de cada ponto é dada por
+$$ u_i = \frac{u_{i-1} + u_{i+1} - f_i \Delta x^2}{2},$$</p>
+<p>adotando a notação de slices do Matlab ou Python, podemos escrever esta atualização simultânea para
+todos os nós do conjunto vermelho como</p>
+<p>$$ u(R) = \frac{1}{2}\left(u(R_{-1}) + u(R_{+1}) - f(R) \Delta x^2\right),$$</p>
+<p>e do conjunto preto como</p>
+<p>$$ u(B) = \frac{1}{2}\left(u(B_{-1}) + u(B_{+1}) - f(B) \Delta x^2\right).$$</p>
+<p>Um ciclo com estas duas atualizações atualiza todos os pontos da malha. </p>
+<p>É importante notar que, apesar de dizermos que conceitualmente, a atualização de todos os nós
+de um conjunto é simultânea, em uma implementação prática com a linguagem Python, por exemplo,
+o a atualização dentro de cada conjunto é sequencial, feita em uma ordem interna determinada
+pela implementação dos operadores do Numpy.</p>
+<p>Vamos ver uma implementação desta atualização para ver se funciona, depois nos preocupamos com
+o desempenho. O arquivo de apoio foi simplificado um pouco para diminuir a confusão. A principal
+inclusão é de uma classe que computa os slices dos vetores para implementação vetorial.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span>
+<span class="normal">84</span>
+<span class="normal">85</span>
+<span class="normal">86</span>
+<span class="normal">87</span>
+<span class="normal">88</span>
+<span class="normal">89</span>
+<span class="normal">90</span>
+<span class="normal">91</span>
+<span class="normal">92</span>
+<span class="normal">93</span>
+<span class="normal">94</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">gssup04.py</span>
+
+<span class="sd">This just organizes a few support functions for the GS iteration.</span>
+<span class="sd">This version introduces the Red-Black order range.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">numpy</span>       <span class="k">as</span>     <span class="nn">np</span>
+<span class="kn">from</span>   <span class="nn">math</span>        <span class="kn">import</span> <span class="n">pi</span>
+<span class="kn">from</span>   <span class="nn">itertools</span>   <span class="kn">import</span> <span class="n">chain</span>
+
+<span class="n">__format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+<span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="n">__format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+<span class="c1">#%%</span>
+<span class="k">def</span> <span class="nf">zero_rhs</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">L</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Sets up a null vector for the RHS of the equation&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">sin_rhs</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">A</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Sets up a rhs that produces a single period of a senoidal function with</span>
+<span class="sd">       amplitude A as the solution.&quot;&quot;&quot;</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="mi">2</span><span class="o">*</span><span class="n">pi</span><span class="o">/</span><span class="n">L</span>
+    <span class="k">return</span> <span class="o">-</span><span class="n">f</span><span class="o">*</span><span class="n">f</span><span class="o">*</span><span class="n">A</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">f</span><span class="o">*</span><span class="n">x</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">cub_rhs</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">A</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Sets up rhs to have a cubic solution with zeros on 0, L/2, L/3</span>
+<span class="sd">       and value A on L.</span>
+<span class="sd">       Don&#39;t forget to set up the correct boundary conditions.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="o">-</span><span class="mi">9</span><span class="o">*</span><span class="p">(</span><span class="n">A</span><span class="o">*</span><span class="n">L</span> <span class="o">-</span> <span class="mi">3</span><span class="o">*</span><span class="n">A</span><span class="o">*</span><span class="n">x</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">L</span><span class="o">*</span><span class="n">L</span><span class="o">*</span><span class="n">L</span><span class="p">)</span>
+
+<span class="c1">#%%</span>
+<span class="k">class</span> <span class="nc">Problem</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">nnode</span><span class="p">,</span> <span class="n">U0</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">calc_rhs</span><span class="o">=</span><span class="n">zero_rhs</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        L: float      -- Length of the domain</span>
+<span class="sd">        nnode: int    -- Number of nodes</span>
+<span class="sd">        U0, UL: float -- Dirichlet boundary conditions</span>
+<span class="sd">        calc_rhs function(x, L, *args) -- computes the rhs of the equation</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">nnode</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dx2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dx</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">dx</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">u</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">L</span> <span class="o">=</span> <span class="n">L</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nn</span> <span class="o">=</span> <span class="n">nnode</span>
+        <span class="k">if</span> <span class="n">U0</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">U0</span> 
+        <span class="k">if</span> <span class="n">UL</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">UL</span> 
+        <span class="bp">self</span><span class="o">.</span><span class="n">f</span> <span class="o">=</span> <span class="n">calc_rhs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hist</span> <span class="o">=</span> <span class="kc">None</span>
+
+<span class="c1">#%%</span>
+<span class="k">class</span> <span class="nc">RBSlice</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns array slices for Red-Black update.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="p">):</span>
+        <span class="n">Mb</span><span class="p">,</span> <span class="n">Mr</span> <span class="o">=</span> <span class="p">(</span><span class="n">size</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="n">size</span><span class="o">-</span><span class="mi">2</span><span class="p">)</span> <span class="k">if</span> <span class="n">size</span><span class="o">%</span><span class="mi">2</span> <span class="k">else</span> <span class="p">(</span><span class="n">size</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="n">size</span><span class="o">-</span><span class="mi">3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">R</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">Mr</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Rm</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="n">Mr</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Rp</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="n">Mr</span><span class="o">+</span><span class="mi">2</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">B</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="n">Mb</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Bm</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">Mb</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Bp</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span><span class="n">Mb</span><span class="o">+</span><span class="mi">2</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+
+<span class="c1">#%%</span>
+<span class="k">class</span> <span class="nc">RBRange</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a range **with step 1** in the red-black ordering,</span>
+<span class="sd">    skipping over 0 and n-1, pretty much just useful for GS</span>
+<span class="sd">    iterations.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_s</span> <span class="o">=</span> <span class="n">size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_s</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">c</span> <span class="o">=</span> <span class="n">chain</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span><span class="mi">2</span><span class="p">],</span> <span class="n">r</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span><span class="mi">2</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="fm">__next__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+           <span class="k">return</span> <span class="nb">next</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">c</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
+            <span class="k">raise</span> <span class="ne">StopIteration</span>
+
+<span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Directly logs info calls, 99% of what we&#39;re doing.&quot;&quot;&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+
+<p>A implementação vetorial pode ser vista no programa abaixo. Note que deixamos apenas a implementação
+Red-Black normal e a vetorial, para simplificar o programa. </p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span>
+<span class="normal">84</span>
+<span class="normal">85</span>
+<span class="normal">86</span>
+<span class="normal">87</span>
+<span class="normal">88</span>
+<span class="normal">89</span>
+<span class="normal">90</span>
+<span class="normal">91</span>
+<span class="normal">92</span>
+<span class="normal">93</span>
+<span class="normal">94</span>
+<span class="normal">95</span>
+<span class="normal">96</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Comparison of convergence rates between forward, backward and</span>
+<span class="sd">symmetric GS iterations</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span>  <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">gssup04</span> <span class="k">as</span> <span class="nn">gs</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Setting up problems.&quot;</span><span class="p">)</span>
+<span class="n">A</span> <span class="o">=</span> <span class="mf">4.0</span>
+<span class="n">L</span> <span class="o">=</span> <span class="mf">3.0</span>
+
+<span class="n">nn</span> <span class="o">=</span> <span class="mi">22</span>
+<span class="n">maxiter</span> <span class="o">=</span> <span class="mi">1000</span>
+<span class="n">tol</span> <span class="o">=</span> <span class="mf">5e-4</span>
+
+<span class="n">probs_rbv</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span> <span class="n">gs</span><span class="o">.</span><span class="n">Problem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">zero_rhs</span><span class="p">),</span>
+          <span class="s1">&#39;sinusoidal&#39;</span><span class="p">:</span> <span class="n">gs</span><span class="o">.</span><span class="n">Problem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">sin_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">),</span>
+               <span class="s1">&#39;cubic&#39;</span><span class="p">:</span> <span class="n">gs</span><span class="o">.</span><span class="n">Problem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">cub_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">)}</span>
+<span class="n">probs_rb</span> <span class="o">=</span> <span class="p">{</span>  <span class="s1">&#39;linear&#39;</span><span class="p">:</span> <span class="n">gs</span><span class="o">.</span><span class="n">Problem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">zero_rhs</span><span class="p">),</span>
+          <span class="s1">&#39;sinusoidal&#39;</span><span class="p">:</span> <span class="n">gs</span><span class="o">.</span><span class="n">Problem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">sin_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">),</span>
+               <span class="s1">&#39;cubic&#39;</span><span class="p">:</span> <span class="n">gs</span><span class="o">.</span><span class="n">Problem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">cub_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">)}</span>
+
+<span class="n">rbrange</span> <span class="o">=</span> <span class="n">gs</span><span class="o">.</span><span class="n">RBRange</span><span class="p">(</span><span class="n">nn</span><span class="p">)</span>
+<span class="n">orders</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;rb&#39;</span><span class="p">:</span> <span class="p">(</span><span class="n">probs_rb</span><span class="p">,</span> <span class="n">rbrange</span><span class="p">)}</span>
+
+<span class="c1">#%% Conventional RB iteration</span>
+<span class="k">for</span> <span class="n">order</span><span class="p">,</span> <span class="p">(</span><span class="n">prob</span><span class="p">,</span> <span class="n">prob_range</span><span class="p">)</span> <span class="ow">in</span> <span class="n">orders</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Running </span><span class="si">{}</span><span class="s2"> ordering.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">order</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">prob</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Solving </span><span class="si">{}</span><span class="s2"> problem.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">maxiter</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="n">converged</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">for</span> <span class="n">it</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxiter</span><span class="p">):</span>
+            <span class="n">uold</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">prob_range</span><span class="p">:</span>
+                <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">p</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>  
+            <span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">uold</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">)</span><span class="o">/</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">tol</span><span class="p">:</span>
+                <span class="n">converged</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> converged after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                                                              <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">it</span><span class="p">))</span>
+                <span class="k">break</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">converged</span><span class="p">:</span>
+            <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> failed to converge after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                                                              <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">it</span><span class="p">))</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">resize</span><span class="p">(</span><span class="n">err</span><span class="p">,</span> <span class="n">it</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">hist</span> <span class="o">=</span> <span class="n">err</span>
+
+<span class="c1">#%% Vector RB iteration</span>
+<span class="n">s</span> <span class="o">=</span> <span class="n">gs</span><span class="o">.</span><span class="n">RBSlice</span><span class="p">(</span><span class="n">probs_rbv</span><span class="p">[</span><span class="s1">&#39;linear&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">)</span> 
+<span class="n">order</span> <span class="o">=</span> <span class="s1">&#39;rbw&#39;</span>
+<span class="n">prob</span> <span class="o">=</span> <span class="n">probs_rbv</span>
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Running </span><span class="si">{}</span><span class="s2"> ordering.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">order</span><span class="p">))</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">prob</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Solving </span><span class="si">{}</span><span class="s2"> problem.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">maxiter</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+    <span class="n">converged</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">it</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxiter</span><span class="p">):</span>
+        <span class="n">uold</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rm</span><span class="p">]</span><span class="o">+</span><span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rp</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">p</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">])</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bm</span><span class="p">]</span><span class="o">+</span><span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bp</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">p</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">])</span> 
+        <span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">uold</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">)</span><span class="o">/</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">tol</span><span class="p">:</span>
+            <span class="n">converged</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> converged after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                                                          <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">it</span><span class="p">))</span>
+            <span class="k">break</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">converged</span><span class="p">:</span>
+        <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> failed to converge after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                                                          <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">it</span><span class="p">))</span>
+    <span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">resize</span><span class="p">(</span><span class="n">err</span><span class="p">,</span> <span class="n">it</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">hist</span> <span class="o">=</span> <span class="n">err</span>
+<span class="n">orders</span><span class="p">[</span><span class="s1">&#39;rbv&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">probs_rbv</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>       
+
+<span class="n">figs</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">3</span><span class="p">),</span>
+     <span class="s1">&#39;sinusoidal&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">4</span><span class="p">),</span>
+          <span class="s1">&#39;cubic&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="mi">5</span><span class="p">)}</span>
+
+<span class="n">styles</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;rb&#39;</span><span class="p">:</span> <span class="s1">&#39;r+&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;rbv&#39;</span><span class="p">:</span> <span class="s1">&#39;b&#39;</span><span class="p">}</span>
+<span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">probs_rb</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Solution for problem </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">yscale</span><span class="p">(</span><span class="s1">&#39;log&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> problem convergence history&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+
+<span class="c1"># Plot graphs correctly</span>
+<span class="k">for</span> <span class="n">order</span><span class="p">,</span> <span class="p">(</span><span class="n">prob</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="n">orders</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">prob</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">,</span> <span class="n">styles</span><span class="p">[</span><span class="n">order</span><span class="p">])</span>     
+        <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">hist</span><span class="p">,</span> <span class="n">styles</span><span class="p">[</span><span class="n">order</span><span class="p">])</span> 
+</code></pre></div></td></tr></table></div>
+
+<p>Vamos agora ver uma comparação dos tempos de execução para um único problema, para um número
+fixo de iterações, em um contexto bem simplificado para evitar distrações.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Comparison of convergence rates between forward, backward and</span>
+<span class="sd">symmetric GS iterations</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">gssup04</span> <span class="k">as</span>     <span class="nn">gs</span>
+<span class="kn">from</span>   <span class="nn">timeit</span>  <span class="kn">import</span> <span class="n">timeit</span>
+
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Setting up problems.&quot;</span><span class="p">)</span>
+<span class="n">A</span> <span class="o">=</span> <span class="mf">4.0</span>
+<span class="n">L</span> <span class="o">=</span> <span class="mf">3.0</span>
+
+<span class="n">nn</span> <span class="o">=</span> <span class="mi">1000</span>
+<span class="n">maxiter</span> <span class="o">=</span> <span class="mi">100</span>
+<span class="n">tol</span> <span class="o">=</span> <span class="mf">5e-4</span>
+
+<span class="n">prbv</span> <span class="o">=</span>  <span class="n">gs</span><span class="o">.</span><span class="n">Problem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">sin_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">)</span>
+<span class="n">prb</span> <span class="o">=</span>  <span class="n">gs</span><span class="o">.</span><span class="n">Problem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">sin_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">)</span>
+
+<span class="n">rbrange</span> <span class="o">=</span> <span class="n">gs</span><span class="o">.</span><span class="n">RBRange</span><span class="p">(</span><span class="n">nn</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">run_rb</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">it</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxiter</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">rbrange</span><span class="p">:</span>
+            <span class="n">prb</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">prb</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">prb</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">prb</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">prb</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>  
+
+<span class="c1">#%% Vector RB iteration</span>
+<span class="n">s</span> <span class="o">=</span> <span class="n">gs</span><span class="o">.</span><span class="n">RBSlice</span><span class="p">(</span><span class="n">prbv</span><span class="o">.</span><span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">)</span> 
+<span class="k">def</span> <span class="nf">run_rbv</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">it</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxiter</span><span class="p">):</span>
+        <span class="n">prbv</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">prbv</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rm</span><span class="p">]</span><span class="o">+</span><span class="n">prbv</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rp</span><span class="p">]</span> <span class="o">-</span> <span class="n">prbv</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">prbv</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">])</span>
+        <span class="n">prbv</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">prbv</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bm</span><span class="p">]</span><span class="o">+</span><span class="n">prbv</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bp</span><span class="p">]</span> <span class="o">-</span> <span class="n">prbv</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">prbv</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">])</span> 
+
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Running  Classical RB iteration.&quot;</span><span class="p">)</span>
+<span class="n">trb</span> <span class="o">=</span> <span class="n">timeit</span><span class="p">(</span><span class="n">run_rb</span><span class="p">,</span> <span class="n">number</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Time for classic Red-Black: </span><span class="si">{}</span><span class="s2"> seconds&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">trb</span><span class="p">))</span>
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Running Vector RB iteration.&quot;</span><span class="p">)</span>
+<span class="n">trbv</span> <span class="o">=</span> <span class="n">timeit</span><span class="p">(</span><span class="n">run_rbv</span><span class="p">,</span> <span class="n">number</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>    
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Time for vector Red-Black: </span><span class="si">{}</span><span class="s2"> seconds&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">trbv</span><span class="p">))</span>
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Ratio Classic/Vector: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">trb</span><span class="o">/</span><span class="n">trbv</span><span class="p">))</span>
+</code></pre></div></td></tr></table></div>
+
+<p>É interessante rodar o programa acima para vários tamanhos de vetor. No meu laptop pessoal, para problemas de tamanho 1000, obtive os resultados abaixo.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">1</span>
+<span class="normal">2</span>
+<span class="normal">3</span>
+<span class="normal">4</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="mi">18</span><span class="o">:</span><span class="mi">40</span><span class="o">:</span><span class="mi">24</span><span class="o">:</span><span class="w"> </span><span class="n">Time</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">classic</span><span class="w"> </span><span class="n">Red</span><span class="o">-</span><span class="n">Black</span><span class="o">:</span><span class="w"> </span><span class="mf">106.02983521402348</span><span class="w"> </span><span class="n">seconds</span><span class="w"></span>
+<span class="mi">18</span><span class="o">:</span><span class="mi">40</span><span class="o">:</span><span class="mi">24</span><span class="o">:</span><span class="w"> </span><span class="n">Running</span><span class="w"> </span><span class="n">Vector</span><span class="w"> </span><span class="n">RB</span><span class="w"> </span><span class="n">iteration</span><span class="o">.</span><span class="w"></span>
+<span class="mi">18</span><span class="o">:</span><span class="mi">40</span><span class="o">:</span><span class="mi">26</span><span class="o">:</span><span class="w"> </span><span class="n">Time</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">vector</span><span class="w"> </span><span class="n">Red</span><span class="o">-</span><span class="n">Black</span><span class="o">:</span><span class="w"> </span><span class="mf">1.5082596670254134</span><span class="w"> </span><span class="n">seconds</span><span class="w"></span>
+<span class="mi">18</span><span class="o">:</span><span class="mi">40</span><span class="o">:</span><span class="mi">26</span><span class="o">:</span><span class="w"> </span><span class="n">Ratio</span><span class="w"> </span><span class="n">Classic</span><span class="o">/</span><span class="n">Vector</span><span class="o">:</span><span class="w"> </span><span class="mf">70.29945673952503</span><span class="w"></span>
+</code></pre></div></td></tr></table></div>
+
+<p>Acho que isto deixa bem claro que tentar paralelizar qualquer coisa que não seja vetorizada é uma
+tolice sem tamanho.</p>
+
+  </div>
+  <footer>
+    &copy; Copyright 2019 by Ramiro Brito Willmersdorf.
+  </footer>
+</body>
+<html>

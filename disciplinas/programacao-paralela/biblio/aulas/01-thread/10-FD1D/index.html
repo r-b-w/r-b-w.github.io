@@ -1,0 +1,452 @@
+<!doctype html>
+<html>
+  <head>
+     <meta charset="utf-8">
+     <link rel="stylesheet" href="../../../../../../static/style.css">
+     <link rel="stylesheet" href="../../../../../../static/pygments.css">
+     <link rel="stylesheet" href="../../../../../../static/styles_ch.css">
+     <script>
+         MathJax = {
+            tex: {
+               inlineMath: [['$', '$'], ['\\(', '\\)']]
+            }
+         };
+     </script>
+     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+     <title>Diferenças Finitas para Equação de Poisson em 1 dimensão</title>
+  </head>
+<body>
+  <header>
+    <h1>/ramiro/demec/ufpe</h1>
+    <nav>
+      <ul class="nav navbar-nav">
+        <li>
+          <a href="../../../../../../">Home</a></li>
+        
+          <li><a href="../../../../../../blog/">Blog</a></li>
+        
+          <li class="active"><a href="../../../../../">Disciplinas</a></li>
+        
+          <li><a href="../../../../../../bio/">Bio</a></li>
+        
+          <li><a href="../../../../../../contato/">Contato</a></li>
+        
+      </ul>
+    </nav>
+  </header>
+  <div class="page">
+    
+  <h2>Diferenças Finitas para Equação de Poisson em 1 dimensão</h2>
+  <h2> Introdução </h2>
+<p>A primeira observação importante é que o método que vamos empregar aqui para
+resolver este problema está muito longe de ser o mais eficiente e mais apropriado,
+vamos estudá-lo por sua simplicidade acima de tudo.</p>
+
+<p> O problema de trasmissão de calor em regime permanente em uma barra homogênea unidimensional
+é descrito pela seguinte equação diferencial ordinária:
+$$ \nabla^2u(x) = f(x), \quad 0 \le x \le L,$$
+onde $f(x)$ é uma função conhecida que representa a taxa de geração de calor por unidade de volume.
+</p>
+
+<p> Claro que só podemos pensar em resolver uma equação diferencial como esta quando
+especificamos condições de contorno. Para facilitar enormemente as implementações computacionais que
+serão feitas, e com total perda de generalidade, vamos apenas considerar condições de contorno 
+de Dirichlet, 
+$$ u(0) = u_0, \quad u(L) = u_L,$$
+com $ u(0)$ e $  u_L$ valores conhecidos. </p>
+
+<p>Honestamente, para problemas unidimensionais homogêneos como os que vamos tratar aqui, 
+muito provavelmente podemos fazer a integração analítica de $f(x)$ duas vezes e ponto final, mesmo
+que tenhamos apelar para algum <a href="http://www.sagemath.org/"> auxílio computacional</a>.
+</p>
+
+<p> Isto não seria muito útil para ensinar paralelização, no entanto, então vamos prosseguir com a
+discretização do problema pelo método das diferenças finitas.
+</p>
+
+<h2> Diferenças finitas </h2>
+<p>
+O método das diferenças finitas se baseia em aproximar as derivadas que aparecem na equação
+diferencial por, bem, diferenças finitas.
+</p>
+
+<p> Vamos considerar que o intervalo $0 \le x \le L$, está dividido em $N-1$ seguimentos de 
+tamanho $\Delta x = L/(N-1)$, consecutivos e sem sobreposição, e chamar as $N$ extremidades destes
+seguimentos de nós, indexados sequencialmente por $i = 0\ldots N-1$.
+</p>
+
+<p> Claramente a coordenada $x_i$ do ponto $i$ é dada por
+$$x_i = i \Delta x.$$
+</p>
+
+<p> Para tornar a notação mais compacta, vamos definir $u_i = u(x_i)$ e $f_i = f(x_i)$. 
+A aproximação centrada para a derivada segunda é dada por
+$$ \nabla^2 u(x) = \frac{\partial^2 u }{\partial x^2}(x)  \approx
+\frac{u_{i-1}-2u_i+u_{i+1}}{\Delta x^2}.$$ 
+</p>
+
+<p> A equação de Poisson pode ser então aproximada por
+$$ \frac{u_{i-1}-2u_i+u_{i+1}}{\Delta x^2} = f_i, \quad i=0,\ldots, N-1.$$
+</p>
+
+<p>
+Há muitas maneiras de se aplicar e resolver esta equação. Em princípio, podemos 
+escrevê-la para todos os nós interiores, $i=1,\ldots, N-2$, o que forma um sistema de equações
+algébricas lineares com $N-2$ equações. O sistema é tridiagonal e pode ser resolvido muito 
+eficientemente. Discutiremos esta técnica mais à frente.
+</p>
+
+<h2> Iteração de Gauss-Seidel </h2>
+<p> Vamos fazer quase a pior coisa possível agora, no entanto. Vamos reescrever
+a equação como 
+$$ u_i = \frac{1}{2}\left[\left(u_{i-1}+u_{i+1}\right) - f_i \Delta x^2  \right],$$
+e vamos aplicar uma iteração tipo Gauss-Seidel.
+</p>
+
+<p> Usando o índice $k$ para representar a iteração, partimos de uma solução inicial $u_0^0(x)$
+conhecida, e percorremos a malha atualizando o valor de cada nó com o valor mais recentemente
+atualizado do nó vizinho $i-1$ e com o valor da iteração anterior do nó vizinho $i+1$, isto é,
+$$ u_i^{k+1} = \frac{1}{2}\left[\left(u_{i-1}^{k+1}+u_{i+1}^k\right) - f_i \Delta x^2  \right].$$
+</p>
+
+<p> Claramente há um viés na propagação da informação que pode afetar a taxa de convergência 
+do método, mas isto não é problema agora. O maior problema é que, como vimos anteriormente,
+esta iteração é puramente sequencial! Esta é a iteração de Gauss-Seidel na orderm lexicográfica.
+</p>
+
+<p> É importante lembrar que podemos realizar este tipo de iteração em uma ordem arbitrária dos nós.
+Em particular, uma alteração muito comum para se minimizar o óbvio viés na direção da propagação da
+informação que existe com a  ordem lexicográfica é fazer uma iteração simétrica, isto é,
+após cada iteração com
+a expressão acima, é feita uma iteração na direção oposta, isto é
+$$ u_i^{k+1} = \frac{1}{2}\left[\left(u_{i-1}^{k}+u_{i+1}^{k+1}\right) - f_i \Delta x^2  \right].$$
+Isto não ajuda nada quanto à paralelização, no entanto.
+</p>
+
+<p> O que ajuda na paralelização, como vimos anteriormente, é colorir a malha, isto é, dividir os
+nós em conjuntos que podem ser atualizados simultaneamente. No caso, é óbvio que podemos fazer isto 
+com a coloração Red-Black clássica, onde definimos os conjuntos
+$$R = \{ 0,2,4,\ldots\} \quad B = \{1, 3, \ldots\},$$
+e a iteração é feita em duas etapas com a ordem lexicográfica, por exemplo, em cada conjunto.
+</p> 
+
+<p>
+Vamos ver algumas implementações computacionais para ajudar a entender estas alternativas.
+<ul>
+  <li> <a href="lexico/"> Implementação Clássica</a>. </li>
+  <li> <a href="rb/"> Ordenação Red-Black</a>. </li>
+  <li> <a href="vetor/"> Vetorização da Ordenação Red-Black</a>. </li>
+  <li> <a href="parallel/"> "Paralelização" da Iteração de Gauss-Seidel</a>. </li>
+</ul>
+</p>
+
+<h2>Método Direto de Solução</h2>
+<p>
+Uma alternativa à iteração de Gauss-Seidel que pode ser muito mais rápida é reescrever a
+discretizada como
+$$ u_{i-1}-2u_i+u_{i+1} = f_i\Delta x^2,$$
+e aplicá-la a todos os pontos no interior da malha.
+</p>
+<p>
+Para o ponto $i=1$, ficamos com
+$$ u_{0}-2u_1+u_{1} = f_1\Delta x^2.$$
+Vamos chamar o valor da solução no ponto $i=N-1$ de $u_R$, para encurtar a notação.
+A equação para o ponto $i=N-2$ é então 
+$$ u_{N-3}-2u_{N-2}+u_{R} = f_{N-2}\Delta x^2.$$
+</p>
+<p>
+Tanto $u_0$ quanto $u_R$ são conhecidos, portanto estas equações podem ser reescritas como
+$$-2u_1+u_{2} = f_1\Delta x^2 - u_{0}.$$
+e 
+$$ u_{N-3}-2u_{N-2} = f_{N-2}\Delta x^2 - u_{R}.$$
+</p>
+<p>
+Agrupando as equações para os pontos $i=1,\ldots,N-2$, ficamos com o sistema de $N-2$ equações
+algébricas.
+\begin{align}
+-2u_1+u_{2} &= f_1\Delta x^2 - u_{0}\\
+            &\vdots \\
+ u_{i-1}-2u_i+u_{i+1} &= f_i\Delta x^2 \\
+            &\vdots \\
+u_{N-3} - 2u_{N-2} &= f_{N-2}\Delta x^2 - u_{R}
+\end{align}
+</p>
+<p>
+Agrupando as equações para os pontos $i=1,\ldots,N-2$, ficamos com o sistema de $N-2$ equações
+O sistema é obviamente esparso, e mais do que isto, é tridiagonal, e pode ser colocado na forma
+matricial,
+$$
+\begin{bmatrix}
+-2 & 1  &  &   &  &   \\
+1  & -2 & 1 &   &  &   \\
+   &    & \vdots &   &    & \\
+   &    &  & 1 & -2  & 1   \\
+   &    & &   & 1   & -2 
+\end{bmatrix}
+\begin{bmatrix}
+u_1 \\
+u_2 \\
+\vdots \\
+u_{N-3} \\
+u_{N-2} 
+\end{bmatrix}
+=
+\begin{bmatrix}
+\Delta x^2 f_1 - u_0\\
+\Delta x^2 f_2 \\
+\vdots \\
+\Delta x^2 f_{N-3} \\
+\Delta x^2 f_{N-2}-u_R 
+\end{bmatrix}
+$$
+</p>
+
+<p>
+Resolvendo este sistema de equações calculamos rapidamente o valor das incógnitas. <em>Neste caso em 
+particular</em>, a matriz de coeficientes do sistema é <strong>constante</strong> e inclusive poderíamos fatorá-la uma
+única vez na vida, guardar os fatores e fazer apenas a retrosubstituição todas as vezes que
+precisássemos de uma solução, mas vamos tentar manter uma fachada de generalidade e não fazer isto.
+</p>
+
+<h2> Algoritmo de Thomas </h2>
+<p>
+A maneira clássica de resolver um sistema tridiagonal geral de equações é aplicando o 
+algoritmo de Thomas. Este algoritmo é a eliminação Gaussiana convencional, aplicada aproveitando
+a estrutura tridiagonal da matriz de coeficientes. O algoritmo tem dois passes, no primeiro a 
+diagonal inferior é eliminada, no segundo é feita a retrosubstituição.
+</p>
+<h3>Triangularização</h3>
+<p>
+Vamos considerar um sistema tridiagonal genérico
+$$
+\begin{bmatrix}
+b_0 & c_0  &  &  &  &  &   \\
+a_1  & b_1 & c_1 & &  &    & \\
+& a_2  & b_2 & c_2 &   &    & \\
+&   &    & \vdots &   &  &   \\
+&   &    &  & a_{N-2} & b_{N-2}  & c_{N-2}   \\
+&   &    & &   & a_{N-1}   & b_{N-1} 
+\end{bmatrix}
+\begin{bmatrix}
+u_0 \\
+u_1 \\
+u_2 \\
+\vdots \\
+u_{N-3} \\
+u_{N-2} \\
+u_{N-1} 
+\end{bmatrix}
+=
+\begin{bmatrix}
+f_0 \\
+f_1 \\
+f_2 \\
+\vdots \\
+f_{N-3} \\
+f_{N-2} \\
+f_{N-1} 
+\end{bmatrix}
+$$
+</p>
+
+<p>
+Multiplicando a primeira equação por $-a_1/b_0$ e somando na segunda equação, ficamos com,
+$$
+\begin{bmatrix}
+b_0 & c_0  &  &  &  &  &   \\
+  & b_1 - c_0\frac{a_1}{b_0} & c_1  &   &  &  & \\
+& a_2  & b_2 & c_2 &   &    & \\
+&   &    & \vdots &   &  &  \\
+&   &    &  & a_{N-2} & b_{N-2}  & c_{N-2}   \\
+&   &    & &   & a_{N-1}   & b_{N-1} 
+\end{bmatrix}
+\begin{bmatrix}
+u_0 \\
+u_1 \\
+u_2 \\
+\vdots \\
+u_{N-3} \\
+u_{N-2} \\
+u_{N-1} 
+\end{bmatrix}
+=
+\begin{bmatrix}
+f_0 \\
+f_1 - c_0\frac{a_1}{b_0} \\
+f_2 \\
+\vdots \\
+f_{N-3} \\
+f_{N-2} \\
+f_{N-1} 
+\end{bmatrix}
+$$
+e, para melhorar a visualização, vamos indicar os termos modificados por um sinal ${}'$, ficando com
+$$
+\begin{bmatrix}
+b_0 & c_0  &  &  &  &  &   \\
+  & b_1^{'} & c_1 & &  &    & \\
+& a_2  & b_2 & c_2 &   &    & \\
+&   &    & \vdots &   &    & \\
+&   &    &  & a_{N-2} & b_{N-2}  & c_{N-2}   \\
+&   &    & &   & a_{N-1}   & b_{N-1} 
+\end{bmatrix}
+\begin{bmatrix}
+u_0 \\
+u_1 \\
+u_2 \\
+\vdots \\
+u_{N-3} \\
+u_{N-2} \\
+u_{N-1} 
+\end{bmatrix}
+=
+\begin{bmatrix}
+f_0 \\
+f_1^{'} \\
+f_2 \\
+\vdots \\
+f_{N-3} \\
+f_{N-2} \\
+f_{N-1} 
+\end{bmatrix}.
+$$
+</p>
+<p>
+Fazemos agora a mesma coisa com a segunda equação, multiplicando-a por $-a_2/b_1^{'}$ e somando na 
+terceira, equação, obtendo
+$$
+\begin{bmatrix}
+b_0 & c_0  &  &  &  &    & \\
+  & b_1^{'} & c_1 & &     & \\
+&   & b_2^{'}  & c_2  &     & \\
+&   &    & \vdots &   &   & \\
+&   &    &  & a_{N-2} & b_{N-2}  & c_{N-2}   \\
+&   &    & &   & a_{N-1}   & b_{N-1} 
+\end{bmatrix}
+\begin{bmatrix}
+u_0 \\
+u_1 \\
+u_2 \\
+\vdots \\
+u_{N-3} \\
+u_{N-2} \\
+u_{N-1} 
+\end{bmatrix}
+=
+\begin{bmatrix}
+f_0 \\
+f_1^{'} \\
+f_2^{'} \\
+\vdots \\
+f_{N-3} \\
+f_{N-2} \\
+f_{N-1} 
+\end{bmatrix},
+$$
+onde
+$$ b_2^{'} = b_2 - c_1\frac{a_2}{b_1^{'}},
+\quad
+f_2^{'} = f_2 - f_1^{'}\frac{a_2}{b_1^{'}}.
+$$
+</p>
+
+<p>
+Repetimos este processo até a equação $N-1$, ficando com um sistema triangular com apenas a diagonal
+principal e a superior,
+$$
+\begin{bmatrix}
+b_0 & c_0  &  &  &  &  &   \\
+  & b_1^{'} & c_1 & &  &    & \\
+&   & b_2^{'}  & c_2  &     &  & \\
+&   &    & \vdots &   &  &   \\
+&   &    &  &  & b_{N-2}  & c_{N-2}   \\
+&   &    & &   &   & b_{N-1}^{'}  
+\end{bmatrix}
+\begin{bmatrix}
+u_0 \\
+u_1 \\
+u_2 \\
+\vdots \\
+u_{N-3} \\
+u_{N-2} \\
+u_{N-1} 
+\end{bmatrix}
+=
+\begin{bmatrix}
+f_0 \\
+f_1^{'} \\
+f_2^{'} \\
+\vdots \\
+f_{N-3}^{'} \\
+f_{N-2}^{'} \\
+f_{N-1}^{'}
+\end{bmatrix},
+$$
+</p>
+<h3>Retrosubstituição</h3>
+<p>
+A última equação é trivial, e podemos calcular o valor da incógnita diretamente,
+$$u_{N-1} = \frac{f_{N-1}^{'}}{b_{N-1}^{'}},$$
+e podemos usar este valor para calcular o valor da incógnita na penúltima equação,
+$$u_{N-2} = \frac{1}{b_{N-2}^{'}}\left(f_{N-2}^{'} - c_{N-2}u_{N-1}\right).$$
+</p>
+<p>
+Repetindo este procedimento para todas as outras equações, na ordem inversa de sua numeração,
+calculamos todas as incógnitas.
+</p>
+
+<h3>Algoritmo</h3>
+<p>
+Podemos então resumir o algoritmo de Thomas nas seguintes etapas:
+</p>
+
+<p><strong>Triangularização</strong></p>
+<p> Para $i = 1,\ldots,N-1$,
+$$ b_i = b_i - c_{i-1}\frac{a_i}{b_{i-1}}, \quad f_i = f_i - f_{i-1}\frac{a_i}{b_{i-1}}, $$
+</p>
+
+<p><strong>Retrosubstituição</strong></p>
+<p> Para $i = N-1,\ldots,0$,
+$$u_{i} = \frac{1}{b_{i}}\left(f_{i} - c_{i}u_{i+1}\right),$$
+definindo, para simplificar a notação, $u_N = c_{N-1} = 0$.
+</p>
+<p>
+O algoritmo como descrito <em>modifica</em> tanto a matriz original quanto o lado direito da
+equação, o que pode não ser desejável.
+</p>
+
+<p>
+A  característica menos agradável deste algoritmo, no entanto, é que ele é completamente, totalmente,
+ indiscutivelmente, sequencial, por definição. Estritamente, não pode ser vetorizado nem
+paralelizado, sem contorcionismos, mas pelo menos pode manter um pipeline cheio muito bem.
+</p>
+
+<p>
+Em um mundo ideal seria importante discutir as condições para as quais este algoritmo é estável,
+não necessita de pivotamento, etc. Não estamos em condições ideais.
+</p>
+
+<p>
+Vamos ver algumas implementações computacionais deste procedimento.
+<ul>
+  <li> <a href="tridptp/"> Implementação ponto a ponto clássica</a>. </li>
+</ul>
+</p>
+
+
+<h2> Referências </h2>
+<ol>
+  <li> Absolutamente qualquer livro de transmissão de calor.</li>
+  <li> Numerical Recipes in C, The Art of Scientific Computing, Press, Flannery, Teukolski,
+       Vetterling.</li>
+  <li> <a href="https://en.wikipedia.org/wiki/Tridiagonal_matrix_algorithm">Tridiagonal matrix algorithm</a>.</li>
+</ol>
+
+
+  </div>
+  <footer>
+    &copy; Copyright 2019 by Ramiro Brito Willmersdorf.
+  </footer>
+</body>
+<html>

@@ -1,0 +1,636 @@
+<!doctype html>
+<html>
+  <head>
+     <meta charset="utf-8">
+     <link rel="stylesheet" href="../../../../../static/style.css">
+     <link rel="stylesheet" href="../../../../../static/pygments.css">
+     <link rel="stylesheet" href="../../../../../static/styles_ch.css">
+     <script>
+         MathJax = {
+            tex: {
+               inlineMath: [['$', '$'], ['\\(', '\\)']]
+            }
+         };
+     </script>
+     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+     <title>Threading</title>
+  </head>
+<body>
+  <header>
+    <h1>/ramiro/demec/ufpe</h1>
+    <nav>
+      <ul class="nav navbar-nav">
+        <li>
+          <a href="../../../../../">Home</a></li>
+        
+          <li><a href="../../../../../blog/">Blog</a></li>
+        
+          <li class="active"><a href="../../../../">Disciplinas</a></li>
+        
+          <li><a href="../../../../../bio/">Bio</a></li>
+        
+          <li><a href="../../../../../contato/">Contato</a></li>
+        
+      </ul>
+    </nav>
+  </header>
+  <div class="page">
+    
+  <h2>Threading</h2>
+  <h2>Introdução</h2>
+<p>Threading acontece quando várias linhas de execução de um programa ocorrem simultaneamente, e todas acessam o mesmo espaço de memória.</p>
+<p>Isto corresponde muito diretamente ao modelo de computação paralela com memória compartilhada, e é um modelo de programação muito empregado em aplicativos comerciais e sistemas operacionais para aproveitar, por exemplo, os múltiplos núcleos de um processador moderno.</p>
+<p>Usar threads implica, no entanto, em uma programação de baixo nível, no sentido de que o programador é responsável por muitas coisas que poderiam ser feitas automaticamente pela própria linguagem ou pelo sistema operacional.</p>
+<p>Tipicamente, o controle de acesso às variáveis compartilhadas é feito pelo próprio programador explicitamente, e isto pode ser bastante complicado. Em programação científica, a programação direta com threads é usada muito raramente. Em geral, usamos um sistema de mais alto nível, que tem primitivas mais relacionadas com as atividades de programação científica, conhecido como <a href="https://www.openmp.org/">OpenMP</a>.</p>
+<h2>GIL</h2>
+<p>Infelizmente, na implementação padrão da linguagem Python, existe o odiado <a href="https://wiki.python.org/moin/GlobalInterpreterLock">GIL</a>, de Global Interpreter Lock. Devido a dificuldades de implementação do interpretador da linguagem Python, motivos históricos e razões técnicas, o acesso às variáveis internas do interpretador Python é bloqueado para todos os threads menos um a cada instante de tempo.</p>
+<p>O accesso às variáveis é serializado e isto significa que apenas um thread executa a cada instante de tempo, mesmo que, aparentemente, todos estejam sendo executados. Isto siginifica também que, mesmo que você tenha quatro threads e quatro núcleos disponíveis no processador, o seu programa não deve executar mais rapidamente, a menos de condições extremamente especiais.</p>
+<p>Por que existem threads em Python então? Algumas vezes, um thread pode estar "executando" sem gastar CPU, como por exemplo quando está esperando por algum entrada via rede ou sistema de arquivos, ou esperando um dispositivo tornar-se disponível, etc. A programação com threads torna este tipo de programa mais simples e possivelmente mais eficiente.</p>
+<h2>Pré-requisitos</h2>
+<p>Threads são integrados na biblioteca padrão do Python (de uma versão relativamente recente), portanto você pode usá-los simplesmente importanto o módulo como mostrado a seguir.</p>
+<div class="hll"><pre><span></span><span class="kn">import</span> <span class="nn">threading</span>
+</pre></div>
+<p>A partir daí, você pode acessar as classes e funções deste módulo nos seus programas.</p>
+<h2>Logging</h2>
+<p>Não é estritamente necessário, mas é útil usar o módulo <code>logging</code>, que permite que você 
+escreva mensagens com data e hora, automaticamente, e redirecionar para vários destinos.
+Vamos ver um exemplo aqui.</p>
+<div class="hll"><pre><span></span><span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<h2>Criação de threads</h2>
+<p>O principal objeto para programação com threads em Python é a classe <code>Thread</code>.</p>
+<p>Um objeto desta classe corresponde a um fluxo de execução, e você pode associar código a este objeto de duas maneiras diferentes, durante a construção do objeto ou sobrecarrando o método <code>.run</code> do objeto. Vamos ver exemplos destas duas formas. Um thread começa a executar quando o seu método <code>.start</code> é chamado.</p>
+<p>Vamos ver um exemplo simples com <code>.start</code></p>
+<div class="hll"><pre><span></span><span class="kn">import</span> <span class="nn">threading</span> <span class="k">as</span> <span class="nn">td</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">def</span> <span class="nf">thread_prog</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">rest_for</span><span class="p">):</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Started thread </span><span class="si">{name}</span><span class="s1">, will rest for </span><span class="si">{rest}</span><span class="s1">s&#39;</span><span class="o">.</span>\
+                 <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">rest</span><span class="o">=</span><span class="n">rest_for</span><span class="p">))</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">rest_for</span><span class="p">)</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Finished execution of </span><span class="si">{name}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="n">t1</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">thread_prog</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;Thread 1&#39;</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>
+    <span class="n">t1</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<p>E aqui a mesma coisa com um thread como um novo objeto.</p>
+<div class="hll"><pre><span></span><span class="kn">import</span> <span class="nn">threading</span> <span class="k">as</span> <span class="nn">td</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">class</span> <span class="nc">RunThing</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">rest_for</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rf</span> <span class="o">=</span> <span class="n">rest_for</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Started thread </span><span class="si">{name}</span><span class="s1">, will rest for </span><span class="si">{rest}</span><span class="s1">s&#39;</span><span class="o">.</span>\
+                     <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">rest</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="p">))</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Finished execution of </span><span class="si">{name}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="n">t1</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="s1">&#39;Thread 1&#39;</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+    <span class="n">t1</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<h2>Múltiplos threads</h2>
+<p>Vamos ver o que acontece quando colocamos mais de uma thread executando simultaneamente.</p>
+<div class="hll"><pre><span></span><span class="k">class</span> <span class="nc">RunThing</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">rest_for</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rf</span> <span class="o">=</span> <span class="n">rest_for</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Started thread </span><span class="si">{name}</span><span class="s1">, will rest for </span><span class="si">{rest}</span><span class="s1">s&#39;</span><span class="o">.</span>\
+                     <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">rest</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="p">))</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Finished execution of </span><span class="si">{name}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="n">t1</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="s1">&#39;Thread 1&#39;</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+    <span class="n">t2</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="s1">&#39;Thread 2&#39;</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+    <span class="n">t3</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="s1">&#39;Thread 3&#39;</span><span class="p">,</span> <span class="mi">15</span><span class="p">)</span>
+    <span class="n">t3</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">t2</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">t1</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<h2>Término</h2>
+<p>Vocês devem ter percebido que o programa principal termina antes dos threads, o que é bem estranho. Nós podemos, no entanto, suspender a execução do programa enquanto ele aguarda algum thread terminar.</p>
+<p>No Python existem <strong>daemon</strong> threads, que são encerradas automaticamente quando progama termina.
+Rode o programa anterior novamente, com esta nova definição para a classe.</p>
+<div class="hll"><pre><span></span><span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">rest_for</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">daemon</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rf</span> <span class="o">=</span> <span class="n">rest_for</span>
+</pre></div>
+<p>Normalmente, não é isto que você deseja, então existem maneiras de esperar que threads terminem
+antes de continuar a execução, usando o método '.join', como no exemplo abaixo.</p>
+<div class="hll"><pre><span></span><span class="k">class</span> <span class="nc">RunThing</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">rest_for</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">daemon</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rf</span> <span class="o">=</span> <span class="n">rest_for</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Started thread </span><span class="si">{name}</span><span class="s1">, will rest for </span><span class="si">{rest}</span><span class="s1">s&#39;</span><span class="o">.</span>\
+                     <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">rest</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="p">))</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Finished execution of </span><span class="si">{name}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="n">t1</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="s1">&#39;Thread 1&#39;</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+    <span class="n">t2</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="s1">&#39;Thread 2&#39;</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+    <span class="n">t3</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="s1">&#39;Thread 3&#39;</span><span class="p">,</span> <span class="mi">15</span><span class="p">)</span>
+    <span class="n">t3</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">t2</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">t1</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">t3</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Detected end of </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">t3</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">t2</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Detected end of </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">t2</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">t1</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Detected end of </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">t1</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<p>Perceba que isto impõe uma ordem na detecção do final de cada thread e isto pode ter sérias consequências como veremos adiante.</p>
+<h2>Listas de Threads</h2>
+<p>Claramente enumerar explicitamente as threads de um programa é muito restritivo, mas, como threads são objetos normais do Python, podemos guardá-los em qualquer estrutura de dados da linguagem, como listas, dicionários, tuplas, etc., por exemplo,</p>
+<div class="hll"><pre><span></span><span class="kn">import</span> <span class="nn">threading</span> <span class="k">as</span> <span class="nn">td</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">random</span>
+
+<span class="k">class</span> <span class="nc">RunThing</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">daemon</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="s1">&#39;Thread_</span><span class="si">{:02d}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rest_for</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Started thread </span><span class="si">{name}</span><span class="s1">, will rest for </span><span class="si">{rest}</span><span class="s1">s&#39;</span><span class="o">.</span>\
+                     <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">rest</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">rest_for</span><span class="p">))</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rest_for</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Finished execution of </span><span class="si">{name}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Creating threads!&quot;</span><span class="p">)</span>
+    <span class="n">threads</span> <span class="o">=</span> <span class="p">[</span> <span class="n">RunThing</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">)]</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Starting threads!&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">threads</span><span class="p">:</span>
+        <span class="n">t</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Waiting for termination threads!&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">threads</span><span class="p">:</span>
+        <span class="n">t</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<p>Novamente, perceba que o trecho</p>
+<div class="hll"><pre><span></span>    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">threads</span><span class="p">:</span>
+        <span class="n">t</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</pre></div>
+<p>implica que você está esperando os threads terminarem, <em>sequencialmente</em>, na mesma ordem em que você chamou os métodos <code>.join</code>.</p>
+<p>Em muitos casos, não é isto o que você quer, você deseja normalmente ser notificado imediatamente que
+algum thread terminou para tomar alguma atitude, como por exemplo iniciar um novo thread com novos dados.  Para fazer isto precisamos introduzir outras coisas.</p>
+<h2>ThreadPoolExecutor</h2>
+<p>Para gerenciar threads de maneira mais sofisticada, passamos a não criá-las diretamente, e usamos
+objetos especiais da biblioteca do Python, que estão no módulo <a href="https://docs.python.org/3/library/concurrent.futures.html">concurrent.futures</a>.</p>
+<p>Estes objetos são <code>Executors</code>, que gerenciam entidades que rodam em paralelo, e <code>futures</code>, que 
+representam uma computação que não retorna imediatamente, e cujo resultado vai ser fornecido por
+ela em algum tempo no futuro. Existem <code>Executors</code> que gerenciam threads e que gerenciam processos,
+vamos nos preocupar, por enquanto, apenas com aqueles que gerenciam threads.</p>
+<h3>Futures</h3>
+<p>Um <code>Executor</code> roda uma coisa que pode ser chamada, como uma função, assincronamente, e retorna um
+<code>future</code>. Este objeto pode ser usado para esperar a execução do future terminar, cancelar a
+execução, capturar o valor de retorno da função, etc.</p>
+<p>Vamos ver alguns exemplos simples da funcionalidade destes objetos.</p>
+<p>No trecho abaixo, estamos chamando uma função que apenas eleva alguma coisa ao quadrado.
+Note o uso do gerenciador de contexto.</p>
+<div class="hll"><pre><span></span><span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">rest_for</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">rest_for</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data</span><span class="o">*</span><span class="n">data</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">()</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">run_thing</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;run_thing returned: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">r</span><span class="p">))</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<p>Observe que não há razão prática alguma para escrever o programa assim, neste caso poderíamos 
+chamar a função diretamente e não haveria nenhuma diferença. No entanto temos muita flexibilidade
+agora, podemos, por exemplo, verificar se a chamada terminou, desistir da chamada
+após um certo tempo e muitas outras coisas. Também supostamente é possível cancelar um thread se você 
+tiver muita sorte, mas parece que isto é, em geral, uma péssima ideia.</p>
+<div class="hll"><pre><span></span><span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ThreadPoolExecutor</span><span class="p">,</span> <span class="ne">TimeoutError</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">rest_for</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">rest_for</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data</span><span class="o">*</span><span class="n">data</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">()</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">run_thing</span><span class="p">,</span> <span class="mi">15</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">TimeoutError</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Time out!&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">running</span><span class="p">():</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Still running!&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">done</span><span class="p">():</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Finished execution!&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Not done yet!&#39;</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Result of call is: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">r</span><span class="p">))</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<p>Como <code>futures</code> são assíncronos, podemos ter mais de um em execução simultaneamente.
+from concurrent.futures import ThreadPoolExecutor</p>
+<div class="hll"><pre><span></span><span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">random</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">rest_for</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Waiting for </span><span class="si">{}</span><span class="s2"> seconds.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">rest_for</span><span class="p">))</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">rest_for</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data</span><span class="o">*</span><span class="n">data</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">()</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+        <span class="n">fs</span> <span class="o">=</span> <span class="p">[</span> <span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">10</span><span class="p">),</span> <span class="mi">4</span><span class="o">*</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">6</span><span class="p">)</span> <span class="p">]</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Waiting for thread termination.&quot;</span><span class="p">)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="p">[</span> <span class="n">f</span><span class="o">.</span><span class="n">result</span><span class="p">()</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fs</span> <span class="p">]</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Results of calls are: </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">res</span><span class="p">))</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<p>Em termos de evitar uma sequencialização do término, não ganhamos nada com isto, pois a linha</p>
+<div class="hll"><pre><span></span>        <span class="n">res</span> <span class="o">=</span> <span class="p">[</span> <span class="n">f</span><span class="o">.</span><span class="n">result</span><span class="p">()</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fs</span> <span class="p">]</span>
+</pre></div>
+<p>claramente implica na espera sequencial pelo término dos threads, na mesma ordem em que 
+eles foram criados.</p>
+<p>Este programa pode ser reescrito de forma muito mais elegante com o método <code>.map</code> de um executor.</p>
+<div class="hll"><pre><span></span><span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">random</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">rest_for</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Waiting for </span><span class="si">{}</span><span class="s2"> seconds.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">rest_for</span><span class="p">))</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">rest_for</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data</span><span class="o">*</span><span class="n">data</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">()</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+        <span class="n">nt</span> <span class="o">=</span> <span class="mi">5</span>
+        <span class="n">rests</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">10</span><span class="p">,</span> <span class="n">nt</span><span class="p">)</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="p">[</span> <span class="mi">4</span><span class="o">*</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nt</span><span class="p">)</span> <span class="p">]</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Waiting for thread resuls.&quot;</span><span class="p">)</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">executor</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">rests</span><span class="p">,</span> <span class="n">vals</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Results of calls are: </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">res</span><span class="p">)))</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<h3>Quebrando a sequencialidade</h3>
+<p>Existem duas funções do módulo <code>concurrent.futures</code> que pode ser usadas para tratar os threads
+tão logo terminem, <code>as_completed</code> e <code>wait</code>.</p>
+<p>A função <code>as_completed</code> retorna um iterador sobre os futures que vai fornecendo um future à medida 
+em que eles vão completando.</p>
+<div class="hll"><pre><span></span><span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ThreadPoolExecutor</span><span class="p">,</span> <span class="n">as_completed</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">rest_for</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Waiting for </span><span class="si">{}</span><span class="s2"> seconds.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">rest_for</span><span class="p">))</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">rest_for</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data</span><span class="o">*</span><span class="n">data</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">()</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+        <span class="n">fs</span> <span class="o">=</span> <span class="p">[</span> <span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">20</span><span class="p">,</span><span class="mi">10</span><span class="p">)</span> <span class="p">]</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Waiting for thread termination.&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">as_completed</span><span class="p">(</span><span class="n">fs</span><span class="p">):</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Got result </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">result</span><span class="p">()))</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<p>A função <code>wait</code> é mais complexa. Em primeiro lugar, você tem que dizer se quer retornar quando 
+todos os threads terminem, quando o primeiro thread termine ou quando a primeira exceção aconteça,
+com os flags <code>ALL_COMPLETED</code>, <code>FIRST_COMPLETED</code>, <code>FIRST_EXCEPTION</code>.</p>
+<p>Esta função retorna dois conjuntos em uma tupla nomeada, o conjunto dos futures que terminaram e 
+o conjunto daqueles que ainda não terminaram. É mais fácil ver isto em um exemplo.</p>
+<div class="hll"><pre><span></span><span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ThreadPoolExecutor</span><span class="p">,</span> <span class="n">wait</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">rest_for</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Waiting for </span><span class="si">{}</span><span class="s2"> seconds.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">rest_for</span><span class="p">))</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">rest_for</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data</span><span class="o">*</span><span class="n">data</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">()</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+        <span class="n">fs</span> <span class="o">=</span> <span class="p">[</span> <span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">20</span><span class="p">,</span><span class="mi">10</span><span class="p">)</span> <span class="p">]</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Waiting for thread termination.&quot;</span><span class="p">)</span>
+        <span class="n">all_fs</span> <span class="o">=</span> <span class="n">wait</span><span class="p">(</span><span class="n">fs</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Completed threads:&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">all_fs</span><span class="o">.</span><span class="n">done</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Got result </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">result</span><span class="p">()))</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">all_fs</span><span class="o">.</span><span class="n">not_done</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Should not happen!&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<p>Como vimos acima, você pode esperar por uma de cada vez, também. Observe que no programa acima usamos
+o valor default para <code>return_when</code>.</p>
+<div class="hll"><pre><span></span><span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ThreadPoolExecutor</span><span class="p">,</span> <span class="n">wait</span><span class="p">,</span> <span class="n">FIRST_COMPLETED</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">rest_for</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Waiting for </span><span class="si">{}</span><span class="s2"> seconds.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">rest_for</span><span class="p">))</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">rest_for</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data</span><span class="o">*</span><span class="n">data</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">()</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+        <span class="n">fs</span> <span class="o">=</span> <span class="p">[</span> <span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">20</span><span class="p">,</span><span class="mi">10</span><span class="p">)</span> <span class="p">]</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Waiting for thread termination.&quot;</span><span class="p">)</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">ffs</span> <span class="o">=</span> <span class="n">wait</span><span class="p">(</span><span class="n">fs</span><span class="p">,</span> <span class="n">return_when</span><span class="o">=</span><span class="n">FIRST_COMPLETED</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ffs</span><span class="o">.</span><span class="n">done</span><span class="p">:</span> 
+                <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">ffs</span><span class="o">.</span><span class="n">done</span><span class="p">:</span>
+                    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Got result </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">result</span><span class="p">()))</span>
+            <span class="k">else</span><span class="p">:</span> <span class="k">break</span>
+            <span class="n">fs</span> <span class="o">=</span> <span class="n">ffs</span><span class="o">.</span><span class="n">not_done</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<p>O programa acima não tem aparentemente muitas vantagens em relação a usar <code>as_completed</code>, mas 
+agora podemos ir adicionando novas threads quando detectamos o término de uma.</p>
+<div class="hll"><pre><span></span><span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ThreadPoolExecutor</span><span class="p">,</span> <span class="n">wait</span><span class="p">,</span> <span class="n">FIRST_COMPLETED</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">rest_for</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Waiting for </span><span class="si">{}</span><span class="s2"> seconds.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">rest_for</span><span class="p">))</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">rest_for</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data</span><span class="o">*</span><span class="n">data</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="n">max_threads</span><span class="o">=</span><span class="mi">30</span>
+    <span class="n">start_threads</span> <span class="o">=</span> <span class="mi">10</span>
+    <span class="n">run_threads</span> <span class="o">=</span> <span class="n">start_threads</span>
+    <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">()</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+        <span class="n">fs</span> <span class="o">=</span> <span class="p">[</span> <span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">20</span><span class="p">,</span><span class="n">start_threads</span><span class="p">)</span> <span class="p">]</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Waiting for thread termination.&quot;</span><span class="p">)</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">ffs</span> <span class="o">=</span> <span class="n">wait</span><span class="p">(</span><span class="n">fs</span><span class="p">,</span> <span class="n">return_when</span><span class="o">=</span><span class="n">FIRST_COMPLETED</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ffs</span><span class="o">.</span><span class="n">done</span><span class="p">:</span> 
+                <span class="n">newfs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
+                <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">ffs</span><span class="o">.</span><span class="n">done</span><span class="p">:</span>
+                    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Got result </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">result</span><span class="p">()))</span>
+                    <span class="n">t</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">20</span><span class="p">,</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="n">run_threads</span> <span class="o">&lt;</span> <span class="n">max_threads</span><span class="p">:</span>
+                        <span class="n">newfs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">t</span><span class="p">))</span>
+                        <span class="n">run_threads</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span> <span class="k">break</span>
+            <span class="n">fs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">ffs</span><span class="o">.</span><span class="n">not_done</span><span class="p">)</span><span class="o">+</span><span class="n">newfs</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<p>O esquema acima é bem genérico e flexível, e permite que mantenhamos o número de threads em execução 
+mais ou menos constante, como em um típico esquema "bag of tasks".</p>
+<h2>Problemas</h2>
+<p>Um dos motivos para estudarmos threads, mesmo sem nenhum aumento de desempenho, é que podemos ver
+alguns dos problemas que podem ocorrer em computação paralela em um contexto muito simples.</p>
+<h3>Deadlock</h3>
+<p>Um programa está em deadlock quando todos os threads estão parados, esperando por alguma coisa que 
+não pode acontecer. Isto normamente ocorre por causa de alguma dependência cruzada.</p>
+<p>Execute o programa a seguir e perceba que os threads nunca terminam, já que o primeiro espera o
+segundo terminar, e o segundo espera o primeiro terminar.</p>
+<div class="hll"><pre><span></span><span class="kn">import</span> <span class="nn">threading</span> <span class="k">as</span> <span class="nn">td</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">class</span> <span class="nc">RunThing</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">rest_for</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rf</span> <span class="o">=</span> <span class="n">rest_for</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sis</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">set_sis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sis</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sis</span> <span class="o">=</span> <span class="n">sis</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Started thread </span><span class="si">{name}</span><span class="s1">, will rest for </span><span class="si">{rest}</span><span class="s1">s&#39;</span><span class="o">.</span>\
+                     <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">rest</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="p">))</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sis</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Finished execution of </span><span class="si">{name}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program started!&quot;</span><span class="p">)</span>
+    <span class="n">t1</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="s1">&#39;Thread 1&#39;</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+    <span class="n">t2</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="s1">&#39;Thread 2&#39;</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+    <span class="n">t2</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">t1</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">t1</span><span class="o">.</span><span class="n">set_sis</span><span class="p">(</span><span class="n">t2</span><span class="p">)</span>
+    <span class="n">t2</span><span class="o">.</span><span class="n">set_sis</span><span class="p">(</span><span class="n">t1</span><span class="p">)</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<p>Este exemplo é um pouco forçado, mas isto acontece com frequência em programas que tem dependências
+temporais não triviais,  e normalmente não é muito fácil de resolver. Quando o seu programa
+não termina, o problema geralmente é isto.</p>
+<h3>Race conditions</h3>
+<p>Até agora vivemos no conforto de não tocarmos em nenhuma variável compartilhada pelos threads,
+mesmo sendo esta uma das principais características deste modelo de computação.</p>
+<p>O principal problema de compartilhar variáveis é que o valor de uma variável pode ser alterado
+por outro thread enquanto aquela variável é usada em uma operação por um thread!</p>
+<p>Imagine o caso mais simples possível, no qual <code>a</code> é uma variável compartilhada por mais de
+um thread.</p>
+<div class="hll"><pre><span></span><span class="n">a</span> <span class="o">=</span> <span class="n">a</span> <span class="o">+</span> <span class="mi">1</span>
+</pre></div>
+<p>Suponha que o valor inicial de <code>a</code> seja 0, e que 10 threads vão executar esta operação mais ou 
+menos ao mesmo tempo. Inocentemente poderíamos esperar que o valor final de <code>a</code> fosse 10, e isto
+pode até acontecer.</p>
+<p>Por outro lado, também pode acontecer que todos os threads tenham lido o valor da variável
+original ao mesmo tempo, incrementado 1, e salvo o valor 1 na variável <code>a</code>, o que será o seu
+valor final.</p>
+<p>Sem algum controle de acesso àquela variável, é <strong>impossível</strong> prever o valor final da variável em
+um sistema arbitrário.</p>
+<p>O exemplo abaixo ilustra isto.</p>
+<div class="hll"><pre><span></span><span class="kn">from</span>   <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ThreadPoolExecutor</span><span class="p">,</span> <span class="n">wait</span>
+<span class="kn">import</span> <span class="nn">threading</span> <span class="k">as</span> <span class="nn">td</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">class</span> <span class="nc">RunThing</span><span class="p">():</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">count</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="n">count</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">counter</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">count</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">counter</span> <span class="o">+=</span> <span class="mi">1</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Starting threads!&quot;</span><span class="p">)</span>
+    <span class="n">nt</span> <span class="o">=</span> <span class="mi">100</span>
+    <span class="n">run_thing</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="mi">100000</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">nt</span><span class="p">)</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+        <span class="n">futures</span> <span class="o">=</span> <span class="p">[</span><span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">run_thing</span><span class="o">.</span><span class="n">update</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nt</span><span class="p">)]</span>
+        <span class="n">wait</span><span class="p">(</span><span class="n">futures</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Computed value s </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">run_thing</span><span class="o">.</span><span class="n">counter</span><span class="p">))</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<p>No meu sistema, executando este programa 4 vezes, obtive os resultados 353517, 315917, 325583, e 340747. O programa não é determinístico.</p>
+<p>Para sabermos o valor correto sem pensar, precisamos proteger o acesso à variável compartilhada
+<code>self.counter</code> com um <code>lock</code>.</p>
+<div class="hll"><pre><span></span><span class="kn">from</span>   <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ThreadPoolExecutor</span><span class="p">,</span> <span class="n">wait</span>
+<span class="kn">import</span> <span class="nn">threading</span> <span class="k">as</span> <span class="nn">td</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">class</span> <span class="nc">RunThing</span><span class="p">():</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">count</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="n">count</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">counter</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">count</span><span class="p">):</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">counter</span> <span class="o">+=</span> <span class="mi">1</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Starting threads!&quot;</span><span class="p">)</span>
+    <span class="n">nt</span> <span class="o">=</span> <span class="mi">100</span>
+    <span class="n">run_thing</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="mi">100000</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">nt</span><span class="p">)</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+        <span class="n">futures</span> <span class="o">=</span> <span class="p">[</span><span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="n">run_thing</span><span class="o">.</span><span class="n">update</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nt</span><span class="p">)]</span>
+        <span class="n">wait</span><span class="p">(</span><span class="n">futures</span><span class="p">)</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Computed value s </span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">run_thing</span><span class="o">.</span><span class="n">counter</span><span class="p">))</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Main program ended!&quot;</span><span class="p">)</span>
+</pre></div>
+<p>O programa passou a ser determinístico, mas agora obviamente sequencializamos o acesso 
+a variável compartilhada. Se este trecho de código fosse importante, o desempenho do programa 
+seria grandemente prejudicado. Claramente estamos falando não da implementação do Python, onde
+threads não aumentam a performance do código em programas de alta intensidade computacional.</p>
+<p>Há outros objetos interessantes no módulo threading, para desenvolver programas paralelos mais
+complexos usando threads, vale a pena ler a documentação do módulo <code>threading</code>, mas o que vimos
+até agora é o suficiente para o nosso uso, lembrando que estamos estudando threads muito mais pelo
+seu valor educacional.</p>
+<h2>Exemplo</h2>
+<p>Vamos ver um exemplo que usa threads para resolver um problema de "engenharia". Vamos lembrar pela
+milésima vez que não podemos esperar ganho de desempenho desta aplicação com a implementação padrão
+do Python. Vamos estudar a solução de um <a href="10-FD1D/">problema de Poisson em uma dimensão com o método 
+das diferenças finitas</a>.</p>
+<h2>Referências</h2>
+<ol>
+<li><p>Documentação do módulo <a href="https://docs.python.org/3/library/threading.html">threading</a> na biblioteca padrão.</p>
+</li>
+<li><p>Documentação do módulo <a href="https://docs.python.org/3/library/concurrent.futures.html">concurrent.futures</a> na biblioteca padrão.</p>
+</li>
+<li><p>Excelente <a href="https://realpython.com/intro-to-python-threading/">tutorial</a> sobre threads e base desta aula.</p>
+</li>
+</ol>
+
+
+  </div>
+  <footer>
+    &copy; Copyright 2019 by Ramiro Brito Willmersdorf.
+  </footer>
+</body>
+<html>

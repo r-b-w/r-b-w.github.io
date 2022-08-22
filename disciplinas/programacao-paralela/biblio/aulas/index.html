@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+  <head>
+     <meta charset="utf-8">
+     <link rel="stylesheet" href="../../../../static/style.css">
+     <link rel="stylesheet" href="../../../../static/pygments.css">
+     <link rel="stylesheet" href="../../../../static/styles_ch.css">
+     <script>
+         MathJax = {
+            tex: {
+               inlineMath: [['$', '$'], ['\\(', '\\)']]
+            }
+         };
+     </script>
+     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+     <title>Aulas</title>
+  </head>
+<body>
+  <header>
+    <h1>/ramiro/demec/ufpe</h1>
+    <nav>
+      <ul class="nav navbar-nav">
+        <li>
+          <a href="../../../../">Home</a></li>
+        
+          <li><a href="../../../../blog/">Blog</a></li>
+        
+          <li class="active"><a href="../../../">Disciplinas</a></li>
+        
+          <li><a href="../../../../bio/">Bio</a></li>
+        
+          <li><a href="../../../../contato/">Contato</a></li>
+        
+      </ul>
+    </nav>
+  </header>
+  <div class="page">
+    
+  <h2>Aulas</h2>
+  <h2>Threading</h2>
+<p>A primeira parte do curso cobre <a href="01-thread/">threading</a> que é basicamente inútil para programação paralela <em>em Python</em>, mas introduz conceitos úteis e é importante em várias outras linguagens.</p>
+<h2>Multiprocessamento</h2>
+<p>Conforme discutido na sessão anterior, threads não úteis para programação em alto desempenho em Python devido
+ao <a href="https://wiki.python.org/moin/GlobalInterpreterLock">GIL</a>. Temos que usar <strong>processos</strong> independentes, e 
+não threads, se quisermos que as coisas sejam executadas ao mesmo tempo por núcleos independentes. Para isto
+usaremos, inicialmente, o módulo de <a href="02-multiproc/">multiprocessamento</a> da linguagem.</p>
+
+
+  </div>
+  <footer>
+    &copy; Copyright 2019 by Ramiro Brito Willmersdorf.
+  </footer>
+</body>
+<html>

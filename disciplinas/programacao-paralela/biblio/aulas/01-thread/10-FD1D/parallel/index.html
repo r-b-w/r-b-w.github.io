@@ -1,0 +1,1597 @@
+<!doctype html>
+<html>
+  <head>
+     <meta charset="utf-8">
+     <link rel="stylesheet" href="../../../../../../../static/style.css">
+     <link rel="stylesheet" href="../../../../../../../static/pygments.css">
+     <link rel="stylesheet" href="../../../../../../../static/styles_ch.css">
+     <script>
+         MathJax = {
+            tex: {
+               inlineMath: [['$', '$'], ['\\(', '\\)']]
+            }
+         };
+     </script>
+     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+     <title>&#34;Paralelização&#34; da Iteração de Gauss-Seidel</title>
+  </head>
+<body>
+  <header>
+    <h1>/ramiro/demec/ufpe</h1>
+    <nav>
+      <ul class="nav navbar-nav">
+        <li>
+          <a href="../../../../../../../">Home</a></li>
+        
+          <li><a href="../../../../../../../blog/">Blog</a></li>
+        
+          <li class="active"><a href="../../../../../../">Disciplinas</a></li>
+        
+          <li><a href="../../../../../../../bio/">Bio</a></li>
+        
+          <li><a href="../../../../../../../contato/">Contato</a></li>
+        
+      </ul>
+    </nav>
+  </header>
+  <div class="page">
+    
+  <h2>&#34;Paralelização&#34; da Iteração de Gauss-Seidel</h2>
+  <h2 id="introducao">Introdução</h2>
+<p>Há fundamentalmente duas maneiras de paralelizar<sup id="fnref:1"><a class="footnote-ref" href="#fn:1">1</a></sup> uma iteração de GS com a ordenação Red-Black.</p>
+<p>A maneira mais natural para programadores não científicos que estão acostumados a trabalhar com
+threads seria paralelizar diretamente o laço de atualização, como indicado no trecho abaixo.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">for</span> <span class="n">it</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxiter</span><span class="p">):</span>
+    <span class="n">uold</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="c1"># Criação de threads</span>
+    <span class="c1"># Atribuição do pontos da cor atualizada a cada thread</span>
+    <span class="c1"># Update em paralelo para cada subconjunto de nós em cada thread</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">prob_range</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">p</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>  
+    <span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">uold</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">)</span><span class="o">/</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">tol</span><span class="p">:</span>
+        <span class="n">converged</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">break</span>
+</code></pre></div></td></tr></table></div>
+
+<p>O problema com este tipo de técnica é que existe um custo de criação e gerenciamento de threads que
+não é trivial, e que pode ser amortizado com uma organização do programa mais compatível com o 
+que normalmente é feito na paralelização dos códigos de engenharia, onde se usa a decomposição
+do domínio.</p>
+<p>O que faremos então é particionar o domínio no número de threads que desejamos executar, criar
+as threads, associar um subdomínio a cada thread e realizar toda a iteração em paralelo,
+sincronizando quando necessário.</p>
+<p>Faremos isto com a forma vetorial da implementação, é claro, por motivos de desempenho.</p>
+<h2 id="particao-do-dominio">Partição do domínio</h2>
+<p>Em um problema mais sério, com uma geometria complexa representada por uma malha não estruturada,
+o particionamento do domínio computacional pode ser complexo, mas há rotinas protas para fazer 
+isto, como o <a href="http://glaros.dtc.umn.edu/gkhome/metis/parmetis/overview">Parmetis</a>,
+ <a href="https://www.labri.fr/perso/pelegrin/scotch/">PT-Scotch</a> e outros.</p>
+<p>No nosso caso o particionamento do domínio é relativamente trivial, já que basta divir os elementos
+de um vetor em grupos consecutivos mais ou menos do mesmo tamanho, para tentar garantir o
+balanceamento de carga.</p>
+<p>Podemos ter uma primeira implementação desta ideia com a função abaixo.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">split_domain_simple</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">nparts</span><span class="p">,</span> <span class="n">bal</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns indices indicating the beginning and end of a partition</span>
+<span class="sd">    of a 1D vector.</span>
+
+<span class="sd">    If bal is true, spreads the unbalanced itens through some of the threads,</span>
+<span class="sd">    otherwise lumps all of the in the last group. Only important if the vector</span>
+<span class="sd">    is very small.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">size_part</span><span class="p">,</span> <span class="n">rest</span> <span class="o">=</span> <span class="nb">divmod</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">nparts</span><span class="p">)</span>          <span class="c1"># Partition the blocks</span>
+    <span class="k">if</span> <span class="n">bal</span><span class="p">:</span>
+        <span class="n">part_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="n">size_part</span><span class="p">]</span><span class="o">*</span><span class="p">(</span><span class="n">nparts</span><span class="o">-</span><span class="n">rest</span><span class="p">)</span><span class="o">+</span><span class="p">[(</span><span class="n">size_part</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span><span class="o">*</span><span class="n">rest</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">part_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="n">size_part</span><span class="p">]</span><span class="o">*</span><span class="p">(</span><span class="n">nparts</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">+</span><span class="p">[(</span><span class="n">size_part</span><span class="o">+</span><span class="n">rest</span><span class="p">)]</span>
+
+    <span class="n">limits</span> <span class="o">=</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="n">part_sizes</span><span class="p">[</span><span class="mi">0</span><span class="p">])]</span>
+    <span class="k">for</span> <span class="n">size</span> <span class="ow">in</span> <span class="n">part_sizes</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">last</span> <span class="o">=</span> <span class="n">limits</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">limits</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">last</span><span class="p">,</span> <span class="n">last</span><span class="o">+</span><span class="n">size</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">limits</span>
+</code></pre></div></td></tr></table></div>
+
+<p>Esta função retorna uma lista de pares com o início e o final de cada faixa que
+deve ser atualizada por cada thread.</p>
+<p>É interessante notar que atualizar o sistema na ordem Red-Black não é estritamente
+essencial para a paralelização. A única dependência importante é entre domínios adjacentes,
+poderíamos organizar a atualização dentro de cada domínio da forma que fosse mais conveniente.</p>
+<p>No caso, a forma mais conveniente é exatamente a iteração Red-Black pois permite que
+a solução seja vetorizada muito facilmente.</p>
+<p>É util então modificar a função acima para retornar uma divisão do domínio em pares de pontos, 
+e, já que estamos aqui, podemos fazer uma que divide o domínio em blocos de um determinado
+tamanho dado. A função abaixo faz isto.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">split_domain</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">nparts</span><span class="p">,</span> <span class="n">blk_size</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">bal</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns indices indicating the beginning and end of a partition</span>
+<span class="sd">    of a 1D vector.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">nblks</span><span class="p">,</span> <span class="n">fix</span> <span class="o">=</span> <span class="nb">divmod</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">blk_size</span><span class="p">)</span>               <span class="c1"># Partition into blocks</span>
+    <span class="n">size_part</span><span class="p">,</span> <span class="n">rest</span> <span class="o">=</span> <span class="nb">divmod</span><span class="p">(</span><span class="n">nblks</span><span class="p">,</span> <span class="n">nparts</span><span class="p">)</span>          <span class="c1"># Partition the blocks</span>
+    <span class="k">if</span> <span class="n">bal</span><span class="p">:</span>
+        <span class="n">part_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="n">size_part</span><span class="o">*</span><span class="n">blk_size</span><span class="p">]</span><span class="o">*</span><span class="p">(</span><span class="n">nparts</span><span class="o">-</span><span class="n">rest</span><span class="p">)</span><span class="o">+</span>\
+                                            <span class="p">[(</span><span class="n">size_part</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">blk_size</span><span class="p">]</span><span class="o">*</span><span class="n">rest</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">part_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="n">size_part</span><span class="o">*</span><span class="n">blk_size</span><span class="p">]</span><span class="o">*</span><span class="p">(</span><span class="n">nparts</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">+</span><span class="p">[(</span><span class="n">size_part</span><span class="o">+</span><span class="n">rest</span><span class="p">)</span><span class="o">*</span><span class="n">blk_size</span><span class="p">]</span>
+
+    <span class="n">limits</span> <span class="o">=</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="n">part_sizes</span><span class="p">[</span><span class="mi">0</span><span class="p">])]</span>
+    <span class="k">for</span> <span class="n">size</span> <span class="ow">in</span> <span class="n">part_sizes</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">last</span> <span class="o">=</span> <span class="n">limits</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">limits</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">last</span><span class="p">,</span> <span class="n">last</span><span class="o">+</span><span class="n">size</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">fix</span><span class="p">:</span>
+        <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">limits</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">limits</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">=</span> <span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="o">+</span><span class="n">fix</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">limits</span>
+</code></pre></div></td></tr></table></div>
+
+<p>Temos uma outra peculiaridade, no entanto.
+Como os nós das extremidades do domínio nunca são atualizados, eles não precisam ser coloridos, nem entra na numeração Red-Black. Então, desejamos que a partição inicie 
+com um nó vermelho na posição 1, e termine um nó antes do último, então temos a última
+versão, abaixo. Não se preocupe demais em entender isto, nem eu mesmo entendo.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">&quot;gstrheadsup.py&quot;</span>
+
+<span class="sd">Thread support functions</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="k">def</span> <span class="nf">split_domain</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">nparts</span><span class="p">,</span> <span class="n">blk_size</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">bal</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">bcs</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a list of pair of indices indicating the beginning and</span>
+<span class="sd">    end of a partition of a 1D vector.</span>
+
+<span class="sd">    size: number of points</span>
+<span class="sd">    nparts: number of partitions</span>
+<span class="sd">    blk_size: number of point on each color (2 for red_black)</span>
+<span class="sd">    bal: if True, at most one block of unbalance between partitions</span>
+<span class="sd">    bcs: if True, ignores the nodes at the extremities</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># Here be dragons.</span>
+    <span class="k">if</span> <span class="n">bcs</span><span class="p">:</span>
+        <span class="n">size</span> <span class="o">-=</span> <span class="mi">2</span>
+    <span class="n">nblks</span><span class="p">,</span> <span class="n">fix</span> <span class="o">=</span> <span class="nb">divmod</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">blk_size</span><span class="p">)</span>              <span class="c1"># Partition into blocks</span>
+    <span class="n">size_part</span><span class="p">,</span> <span class="n">rest</span> <span class="o">=</span> <span class="nb">divmod</span><span class="p">(</span><span class="n">nblks</span><span class="p">,</span> <span class="n">nparts</span><span class="p">)</span>          <span class="c1"># Partition the blocks</span>
+    <span class="k">if</span> <span class="n">bal</span><span class="p">:</span>
+        <span class="n">part_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="n">size_part</span><span class="o">*</span><span class="n">blk_size</span><span class="p">]</span><span class="o">*</span><span class="p">(</span><span class="n">nparts</span><span class="o">-</span><span class="n">rest</span><span class="p">)</span><span class="o">+</span>\
+                                            <span class="p">[(</span><span class="n">size_part</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">blk_size</span><span class="p">]</span><span class="o">*</span><span class="n">rest</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">part_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="n">size_part</span><span class="o">*</span><span class="n">blk_size</span><span class="p">]</span><span class="o">*</span><span class="p">(</span><span class="n">nparts</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">+</span>\
+                                                    <span class="p">[(</span><span class="n">size_part</span><span class="o">+</span><span class="n">rest</span><span class="p">)</span><span class="o">*</span><span class="n">blk_size</span><span class="p">]</span>
+    <span class="n">first</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">bcs</span> <span class="k">else</span> <span class="mi">1</span>
+    <span class="n">limits</span> <span class="o">=</span> <span class="p">[(</span><span class="n">first</span><span class="p">,</span> <span class="n">first</span><span class="o">+</span><span class="n">part_sizes</span><span class="p">[</span><span class="mi">0</span><span class="p">])]</span>
+    <span class="k">for</span> <span class="n">size</span> <span class="ow">in</span> <span class="n">part_sizes</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">last</span> <span class="o">=</span> <span class="n">limits</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">limits</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">last</span><span class="p">,</span> <span class="n">last</span><span class="o">+</span><span class="n">size</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">fix</span><span class="p">:</span>
+        <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">limits</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">limits</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">=</span> <span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="o">+</span><span class="n">fix</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">limits</span>
+</code></pre></div></td></tr></table></div>
+
+<p>Esta função é colocada em um módulo específico, <code>gsthreadsup.py</code>, para poder ser
+empregada em vários contextos diferentes.</p>
+<h3 id="nova-classe">Nova Classe</h3>
+<p>Para facilitar a implementação, vamos definir uma nova classe para descrever um problema,
+derivada da classe original, que inclui também o particionamento do domínio. Vamos mover
+toda a definição do domínio computacional para um módulo específico, <code>problem01.py</code>, e mover
+as coisas ligadas a particionamento e ordenação para este módulo.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">&quot;problem01.py&quot;</span>
+
+<span class="sd">Computational domain definitions.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">gssup04</span> <span class="kn">import</span> <span class="n">zero_rhs</span>
+<span class="kn">import</span> <span class="nn">gsthreadsup</span> <span class="k">as</span> <span class="nn">gst</span>
+
+<span class="c1">#%%</span>
+<span class="k">class</span> <span class="nc">RBSlice</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns array slices for Red-Black update.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="p">):</span>
+        <span class="n">Mr</span> <span class="o">=</span> <span class="n">size</span><span class="o">-</span><span class="mi">2</span>
+        <span class="n">Mb</span> <span class="o">=</span> <span class="n">size</span><span class="o">-</span><span class="mi">3</span> <span class="k">if</span> <span class="n">size</span><span class="o">%</span><span class="mi">2</span> <span class="k">else</span> <span class="n">size</span><span class="o">-</span><span class="mi">2</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">R</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">Mr</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Rm</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="n">Mr</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Rp</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="n">Mr</span><span class="o">+</span><span class="mi">2</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">B</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="n">Mb</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Bm</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">Mb</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Bp</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span><span class="n">Mb</span><span class="o">+</span><span class="mi">2</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+
+<span class="c1">#%%</span>
+<span class="k">class</span> <span class="nc">Problem</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">nnode</span><span class="p">,</span> <span class="n">U0</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">calc_rhs</span><span class="o">=</span><span class="n">zero_rhs</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        L: float      -- Length of the domain</span>
+<span class="sd">        nnode: int    -- Number of nodes</span>
+<span class="sd">        U0, UL: float -- Dirichlet boundary conditions</span>
+<span class="sd">        calc_rhs function(x, L, *args) -- computes the rhs of the equation</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">nnode</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dx2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dx</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">dx</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">u</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">L</span> <span class="o">=</span> <span class="n">L</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nn</span> <span class="o">=</span> <span class="n">nnode</span>
+        <span class="k">if</span> <span class="n">U0</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">U0</span> 
+        <span class="k">if</span> <span class="n">UL</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">UL</span> 
+        <span class="bp">self</span><span class="o">.</span><span class="n">f</span> <span class="o">=</span> <span class="n">calc_rhs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">L</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hist</span> <span class="o">=</span> <span class="kc">None</span>
+
+<span class="k">class</span> <span class="nc">PartitionedProblem</span><span class="p">(</span><span class="n">Problem</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A problem, but partitioned.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">nnode</span><span class="p">,</span> <span class="n">U0</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">calc_rhs</span><span class="o">=</span><span class="n">zero_rhs</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                 <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nnode</span><span class="p">,</span> <span class="n">U0</span><span class="p">,</span> <span class="n">UL</span><span class="p">,</span> <span class="n">calc_rhs</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">slcs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sp</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">first</span><span class="p">,</span> <span class="n">last</span> <span class="ow">in</span> <span class="n">gst</span><span class="o">.</span><span class="n">split_domain</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">npart</span><span class="p">,</span> <span class="n">bcs</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">slcs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">slice</span><span class="p">(</span><span class="n">first</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">last</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sp</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">RBSlice</span><span class="p">(</span><span class="n">last</span><span class="o">-</span><span class="n">first</span><span class="o">+</span><span class="mi">2</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">parts</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">         Returns the partitions of the domain, a triple (up, fp, sp).</span>
+<span class="sd">        The views have overlapping extremes to work as ghost cells.</span>
+
+<span class="sd">        up: list of views of the unknown for each partition</span>
+<span class="sd">        fp: list of views of the rhs</span>
+<span class="sd">        sp: precomputed Red-Black slices for each partition</span>
+<span class="sd">        &quot;&quot;&quot;</span>   
+        <span class="n">up</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="p">]</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">slcs</span><span class="p">]</span>
+        <span class="n">fp</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="p">]</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">slcs</span><span class="p">]</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">up</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sp</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+
+<p>O arquivo de apoio também tem que ser moderadamente reorganizado.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">gssup05.py</span>
+
+<span class="sd">This just organizes a few support functions for the GS iteration.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">numpy</span>       <span class="k">as</span>     <span class="nn">np</span>
+<span class="kn">from</span>   <span class="nn">math</span>        <span class="kn">import</span> <span class="n">pi</span>
+<span class="kn">from</span>   <span class="nn">itertools</span>   <span class="kn">import</span> <span class="n">chain</span>
+
+<span class="n">__format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+<span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="n">__format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+<span class="c1">#%%</span>
+<span class="k">def</span> <span class="nf">zero_rhs</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">L</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Sets up a null vector for the RHS of the equation&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">sin_rhs</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">A</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Sets up a rhs that produces a single period of a senoidal function with</span>
+<span class="sd">       amplitude A as the solution.&quot;&quot;&quot;</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="mi">2</span><span class="o">*</span><span class="n">pi</span><span class="o">/</span><span class="n">L</span>
+    <span class="k">return</span> <span class="o">-</span><span class="n">f</span><span class="o">*</span><span class="n">f</span><span class="o">*</span><span class="n">A</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">f</span><span class="o">*</span><span class="n">x</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">parab_rhs</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">A</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Untested rhs for parabolic solution.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">full_like</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="mi">2</span><span class="o">*</span><span class="n">A</span><span class="o">/</span><span class="p">(</span><span class="n">L</span><span class="o">*</span><span class="n">L</span><span class="p">))</span>
+
+<span class="k">def</span> <span class="nf">cub_rhs</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">A</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Sets up rhs to have a cubic solution with zeros on 0, L/2, L/3</span>
+<span class="sd">       and value A on L.</span>
+<span class="sd">       Don&#39;t forget to set up the correct boundary conditions.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="o">-</span><span class="mi">9</span><span class="o">*</span><span class="p">(</span><span class="n">A</span><span class="o">*</span><span class="n">L</span> <span class="o">-</span> <span class="mi">3</span><span class="o">*</span><span class="n">A</span><span class="o">*</span><span class="n">x</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">L</span><span class="o">*</span><span class="n">L</span><span class="o">*</span><span class="n">L</span><span class="p">)</span>
+
+<span class="c1">#%%</span>
+<span class="k">class</span> <span class="nc">RBRange</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a range **with step 1** in the red-black ordering,</span>
+<span class="sd">    skipping over 0 and n-1, pretty much just useful for GS</span>
+<span class="sd">    iterations.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_s</span> <span class="o">=</span> <span class="n">size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_s</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">c</span> <span class="o">=</span> <span class="n">chain</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span><span class="mi">2</span><span class="p">],</span> <span class="n">r</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span><span class="mi">2</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="fm">__next__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+           <span class="k">return</span> <span class="nb">next</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">c</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
+            <span class="k">raise</span> <span class="ne">StopIteration</span>
+
+<span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Directly logs info calls, 99% of what we&#39;re doing.&quot;&quot;&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+
+<h2 id="iteracao-por-particoes">Iteração por Partições</h2>
+<p>Como o primeiro passo para a paralelização, vamos dividir o domínio computacional
+em partições, ou blocos, e iterar em cada bloco, sequencialmente.</p>
+<p>É interessante observar que algumas mudanças estruturais são necessárias, como, por
+exemplo, não podemos calcular a norma do &ldquo;erro&rdquo; em uma única operação vetorial com
+<code>np.linalg.norm()</code>, já que a raiz quadrada não é uma operação linear.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Sequential RB partitioned iteration.</span>
+
+<span class="sd">It&#39;s in your best interest to make sure that there are enough</span>
+<span class="sd">points left in a partition after the domain is split.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span>  <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">gssup05</span> <span class="k">as</span> <span class="nn">gs</span>
+<span class="kn">import</span> <span class="nn">problem01</span> <span class="k">as</span> <span class="nn">pm</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Setting up problems.&quot;</span><span class="p">)</span>
+<span class="n">A</span> <span class="o">=</span> <span class="mf">4.0</span>
+<span class="n">L</span> <span class="o">=</span> <span class="mf">3.0</span>
+<span class="n">nn</span> <span class="o">=</span> <span class="mi">101</span>
+<span class="n">maxiter</span> <span class="o">=</span> <span class="mi">10000</span>
+<span class="n">tol</span> <span class="o">=</span> <span class="mf">5e-5</span>
+<span class="n">npart</span> <span class="o">=</span> <span class="mi">12</span>
+
+<span class="n">probs_rbv</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span>
+                                            <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">zero_rhs</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">npart</span><span class="p">),</span>
+          <span class="s1">&#39;sinusoidal&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span>
+                                          <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">sin_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">npart</span><span class="p">),</span>
+               <span class="s1">&#39;cubic&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span>
+                                         <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">cub_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">npart</span><span class="p">)}</span>
+
+<span class="c1">#%% Partitioned Iterations</span>
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Running partitioned RB iteration.&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Solving </span><span class="si">{}</span><span class="s2"> problem.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">maxiter</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+    <span class="n">converged</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">it</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxiter</span><span class="p">):</span>
+        <span class="n">err_num</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">err_den</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">up</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="n">sp</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">parts</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">u</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">up</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="n">sp</span><span class="p">):</span>
+            <span class="n">uold</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rm</span><span class="p">]</span><span class="o">+</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rp</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">])</span>
+            <span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bm</span><span class="p">]</span><span class="o">+</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bp</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">])</span> 
+            <span class="n">err_num</span>  <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">((</span><span class="n">uold</span> <span class="o">-</span> <span class="n">u</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+            <span class="n">err_den</span>  <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">u</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">err_num</span><span class="o">/</span><span class="n">err_den</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">tol</span><span class="p">:</span>
+            <span class="n">converged</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> converged after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                                                          <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">it</span><span class="p">))</span>
+            <span class="k">break</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">converged</span><span class="p">:</span>
+        <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> failed to converge after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                                                          <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">it</span><span class="p">))</span>
+    <span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">resize</span><span class="p">(</span><span class="n">err</span><span class="p">,</span> <span class="n">it</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">hist</span> <span class="o">=</span> <span class="n">err</span>
+
+<span class="n">figs</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">3</span><span class="p">),</span>
+     <span class="s1">&#39;sinusoidal&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">4</span><span class="p">),</span>
+          <span class="s1">&#39;cubic&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="mi">5</span><span class="p">)}</span>
+
+<span class="n">styles</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;rb&#39;</span><span class="p">:</span> <span class="s1">&#39;r+&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;rbv&#39;</span><span class="p">:</span> <span class="s1">&#39;b&#39;</span><span class="p">}</span>
+
+<span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Solution for problem </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">yscale</span><span class="p">(</span><span class="s1">&#39;log&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> problem convergence history&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+
+<span class="c1"># Plot graphs correctly</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">,</span> <span class="n">styles</span><span class="p">[</span><span class="s1">&#39;rbv&#39;</span><span class="p">])</span>     
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">hist</span><span class="p">,</span> <span class="n">styles</span><span class="p">[</span><span class="s1">&#39;rbv&#39;</span><span class="p">])</span>    
+</code></pre></div></td></tr></table></div>
+
+<p>É interessante observar que a iteração por blocos mostrada acima não é 
+exatamente idêntica àquela <a href="../vetor/">mostrada anteriormente</a>. </p>
+<p>Podemos verifica isto executando o programa acima para, por exemplo,
+<code>nn = 101</code>, <code>tol = 5e-5</code> e <code>npart = 12</code>, obtemos o seguinte relatório
+ao final da execução.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">1</span>
+<span class="normal">2</span>
+<span class="normal">3</span>
+<span class="normal">4</span>
+<span class="normal">5</span>
+<span class="normal">6</span>
+<span class="normal">7</span>
+<span class="normal">8</span>
+<span class="normal">9</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="mi">18</span><span class="p">:</span><span class="mi">17</span><span class="p">:</span><span class="mi">53</span><span class="p">:</span><span class="w"> </span><span class="n">Setting</span><span class="w"> </span><span class="n">up</span><span class="w"> </span><span class="n">problems</span><span class="o">.</span><span class="w"></span>
+<span class="mi">18</span><span class="p">:</span><span class="mi">17</span><span class="p">:</span><span class="mi">53</span><span class="p">:</span><span class="w"> </span><span class="n">Running</span><span class="w"> </span><span class="n">partitioned</span><span class="w"> </span><span class="n">RB</span><span class="w"> </span><span class="n">iteration</span><span class="o">.</span><span class="w"></span>
+<span class="mi">18</span><span class="p">:</span><span class="mi">17</span><span class="p">:</span><span class="mi">53</span><span class="p">:</span><span class="w"> </span><span class="n">Solving</span><span class="w"> </span><span class="n">linear</span><span class="w"> </span><span class="n">problem</span><span class="o">.</span><span class="w"></span>
+<span class="n">Reloaded</span><span class="w"> </span><span class="n">modules</span><span class="p">:</span><span class="w"> </span><span class="n">gssup05</span><span class="p">,</span><span class="w"> </span><span class="n">problem01</span><span class="p">,</span><span class="w"> </span><span class="n">gssup04</span><span class="p">,</span><span class="w"> </span><span class="n">gsthreadsup</span><span class="w"></span>
+<span class="mi">18</span><span class="p">:</span><span class="mi">17</span><span class="p">:</span><span class="mi">54</span><span class="p">:</span><span class="w"> </span><span class="n">Problem</span><span class="w"> </span><span class="n">linear</span><span class="w"> </span><span class="n">converged</span><span class="w"> </span><span class="n">after</span><span class="w"> </span><span class="mi">2721</span><span class="w"> </span><span class="n">iterations</span><span class="w"></span>
+<span class="mi">18</span><span class="p">:</span><span class="mi">17</span><span class="p">:</span><span class="mi">54</span><span class="p">:</span><span class="w"> </span><span class="n">Solving</span><span class="w"> </span><span class="n">sinusoidal</span><span class="w"> </span><span class="n">problem</span><span class="o">.</span><span class="w"></span>
+<span class="mi">18</span><span class="p">:</span><span class="mi">17</span><span class="p">:</span><span class="mi">54</span><span class="p">:</span><span class="w"> </span><span class="n">Problem</span><span class="w"> </span><span class="n">sinusoidal</span><span class="w"> </span><span class="n">converged</span><span class="w"> </span><span class="n">after</span><span class="w"> </span><span class="mi">1082</span><span class="w"> </span><span class="n">iterations</span><span class="w"></span>
+<span class="mi">18</span><span class="p">:</span><span class="mi">17</span><span class="p">:</span><span class="mi">54</span><span class="p">:</span><span class="w"> </span><span class="n">Solving</span><span class="w"> </span><span class="n">cubic</span><span class="w"> </span><span class="n">problem</span><span class="o">.</span><span class="w"></span>
+<span class="mi">18</span><span class="p">:</span><span class="mi">17</span><span class="p">:</span><span class="mi">54</span><span class="p">:</span><span class="w"> </span><span class="n">Problem</span><span class="w"> </span><span class="n">cubic</span><span class="w"> </span><span class="n">converged</span><span class="w"> </span><span class="n">after</span><span class="w"> </span><span class="mi">1060</span><span class="w"> </span><span class="n">iterations</span><span class="w"></span>
+</code></pre></div></td></tr></table></div>
+
+<p>Executando a iteração vetorial direta, não particionada, mostrada anteriormente, obtemos
+o seguinte:</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">1</span>
+<span class="normal">2</span>
+<span class="normal">3</span>
+<span class="normal">4</span>
+<span class="normal">5</span>
+<span class="normal">6</span>
+<span class="normal">7</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="mi">18</span><span class="o">:</span><span class="mi">19</span><span class="o">:</span><span class="mi">25</span><span class="o">:</span><span class="w"> </span><span class="n">Running</span><span class="w"> </span><span class="n">vector</span><span class="w"> </span><span class="n">iteration</span><span class="o">.</span><span class="w"></span>
+<span class="mi">18</span><span class="o">:</span><span class="mi">19</span><span class="o">:</span><span class="mi">25</span><span class="o">:</span><span class="w"> </span><span class="n">Solving</span><span class="w"> </span><span class="n">linear</span><span class="w"> </span><span class="n">problem</span><span class="o">.</span><span class="w"></span>
+<span class="mi">18</span><span class="o">:</span><span class="mi">19</span><span class="o">:</span><span class="mi">25</span><span class="o">:</span><span class="w"> </span><span class="n">Problem</span><span class="w"> </span><span class="n">linear</span><span class="w"> </span><span class="n">converged</span><span class="w"> </span><span class="n">after</span><span class="w"> </span><span class="mi">2800</span><span class="w"> </span><span class="n">iterations</span><span class="w"></span>
+<span class="mi">18</span><span class="o">:</span><span class="mi">19</span><span class="o">:</span><span class="mi">25</span><span class="o">:</span><span class="w"> </span><span class="n">Solving</span><span class="w"> </span><span class="n">sinusoidal</span><span class="w"> </span><span class="n">problem</span><span class="o">.</span><span class="w"></span>
+<span class="mi">18</span><span class="o">:</span><span class="mi">19</span><span class="o">:</span><span class="mi">25</span><span class="o">:</span><span class="w"> </span><span class="n">Problem</span><span class="w"> </span><span class="n">sinusoidal</span><span class="w"> </span><span class="n">converged</span><span class="w"> </span><span class="n">after</span><span class="w"> </span><span class="mi">1110</span><span class="w"> </span><span class="n">iterations</span><span class="w"></span>
+<span class="mi">18</span><span class="o">:</span><span class="mi">19</span><span class="o">:</span><span class="mi">25</span><span class="o">:</span><span class="w"> </span><span class="n">Solving</span><span class="w"> </span><span class="n">cubic</span><span class="w"> </span><span class="n">problem</span><span class="o">.</span><span class="w"></span>
+<span class="mi">18</span><span class="o">:</span><span class="mi">19</span><span class="o">:</span><span class="mi">25</span><span class="o">:</span><span class="w"> </span><span class="n">Problem</span><span class="w"> </span><span class="n">cubic</span><span class="w"> </span><span class="n">converged</span><span class="w"> </span><span class="n">after</span><span class="w"> </span><span class="mi">1070</span><span class="w"> </span><span class="n">iterations</span><span class="w"></span>
+</code></pre></div></td></tr></table></div>
+
+<p>É curioso ver que a iteração particionada converge um pouco mais rapidamente
+do que a direta para o caso linear. Provavelmente isto se deve ao fato de que
+a ordenação que acontece com a iteração particionada tende a trazer o efeito
+da condição de contorno um pouco mais rapidamente do que a iteração direta.
+Este diagnóstico ainda é completamente especulativo, no entanto.</p>
+<h2 id="fatorando-a-atualizacao">Fatorando a Atualização</h2>
+<p>O próximo passo para a paralelização é encapsular a atualização em uma função que possa
+ser executada com facilidade por um <code>executor</code>.</p>
+<p>O programa abaixo tem essa modificação.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Sequential RB partitioned iteration.</span>
+
+<span class="sd">It&#39;s in your best interest to make sure that there are enough</span>
+<span class="sd">points left in a partition after the domain is split.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span>  <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">gssup05</span> <span class="k">as</span> <span class="nn">gs</span>
+<span class="kn">import</span> <span class="nn">problem01</span> <span class="k">as</span> <span class="nn">pm</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Setting up problems.&quot;</span><span class="p">)</span>
+<span class="n">A</span> <span class="o">=</span> <span class="mf">4.0</span>
+<span class="n">L</span> <span class="o">=</span> <span class="mf">3.0</span>
+<span class="n">nn</span> <span class="o">=</span> <span class="mi">101</span>
+<span class="n">maxiter</span> <span class="o">=</span> <span class="mi">10000</span>
+<span class="n">tol</span> <span class="o">=</span> <span class="mf">5e-5</span>
+<span class="n">npart</span> <span class="o">=</span> <span class="mi">12</span>
+
+<span class="n">probs_rbv</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span>
+                                            <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">zero_rhs</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">npart</span><span class="p">),</span>
+          <span class="s1">&#39;sinusoidal&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span>
+                                         <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">sin_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">npart</span><span class="p">),</span>
+               <span class="s1">&#39;cubic&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span>
+                                         <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">cub_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">npart</span><span class="p">)}</span>
+
+<span class="c1">#%%</span>
+<span class="k">def</span> <span class="nf">par_update</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
+    <span class="n">uold</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rm</span><span class="p">]</span><span class="o">+</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rp</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">])</span>
+    <span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bm</span><span class="p">]</span><span class="o">+</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bp</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">])</span> 
+    <span class="n">err_num</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">((</span><span class="n">uold</span> <span class="o">-</span> <span class="n">u</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">err_den</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">u</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">err_num</span><span class="p">,</span> <span class="n">err_den</span>
+
+<span class="c1">#%% Partitioned Iterations</span>
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Running partitioned RB iteration.&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Solving </span><span class="si">{}</span><span class="s2"> problem.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">maxiter</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+    <span class="n">converged</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">it</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxiter</span><span class="p">):</span>
+        <span class="n">err_num</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">err_den</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">up</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="n">sp</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">parts</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">u</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">up</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="n">sp</span><span class="p">):</span>
+            <span class="n">en</span><span class="p">,</span> <span class="n">ed</span> <span class="o">=</span> <span class="n">par_update</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
+            <span class="n">err_num</span>  <span class="o">+=</span> <span class="n">en</span>
+            <span class="n">err_den</span>  <span class="o">+=</span> <span class="n">ed</span>
+        <span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">err_num</span><span class="o">/</span><span class="n">err_den</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">tol</span><span class="p">:</span>
+            <span class="n">converged</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> converged after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                                                          <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">it</span><span class="p">))</span>
+            <span class="k">break</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">converged</span><span class="p">:</span>
+        <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> failed to converge after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                                                          <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">it</span><span class="p">))</span>
+    <span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">resize</span><span class="p">(</span><span class="n">err</span><span class="p">,</span> <span class="n">it</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">hist</span> <span class="o">=</span> <span class="n">err</span>
+
+<span class="n">figs</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">3</span><span class="p">),</span>
+     <span class="s1">&#39;sinusoidal&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">4</span><span class="p">),</span>
+          <span class="s1">&#39;cubic&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="mi">5</span><span class="p">)}</span>
+
+<span class="n">styles</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;rb&#39;</span><span class="p">:</span> <span class="s1">&#39;r+&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;rbv&#39;</span><span class="p">:</span> <span class="s1">&#39;b&#39;</span><span class="p">}</span>
+
+<span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Solution for problem </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">yscale</span><span class="p">(</span><span class="s1">&#39;log&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> problem convergence history&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+
+<span class="c1"># Plot graphs correctly</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">,</span> <span class="n">styles</span><span class="p">[</span><span class="s1">&#39;rbv&#39;</span><span class="p">])</span>     
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">hist</span><span class="p">,</span> <span class="n">styles</span><span class="p">[</span><span class="s1">&#39;rbv&#39;</span><span class="p">])</span>    
+</code></pre></div></td></tr></table></div>
+
+<h2 id="implementacao-paralela">Implementação &ldquo;Paralela&rdquo;</h2>
+<p>Agora basta apenas executar a função de atualização em paralelo. Temos que garantir
+que as atualizações de cada cor não interfiram com a outra cor. Por isto dividimos
+o domínio sempre terminando em uma cor preta e começando com uma cor vermelha, 
+e vamos introduzir uma chamada de sincronização dentro da função de atualização
+(<code>barrier.wait()</code>), para garantir que a atualização da cor preta só comece quando a vermelha
+acabar. </p>
+<p>Uma implementação melhor faria a sincronização entre os vizinhos apenas, mas como o número
+de threads é muito pequeno, isto não é realmente importante.</p>
+<p>Não é necessário sincronizar a atualização da cor preta, já que está implícita pelo fim
+dos threads.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span>
+<span class="normal">84</span>
+<span class="normal">85</span>
+<span class="normal">86</span>
+<span class="normal">87</span>
+<span class="normal">88</span>
+<span class="normal">89</span>
+<span class="normal">90</span>
+<span class="normal">91</span>
+<span class="normal">92</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Sequential RB partitioned iteration.</span>
+
+<span class="sd">It&#39;s in your best interest to make sure that there are enough</span>
+<span class="sd">points left in a partition after the domain is split.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span>  <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">gssup05</span> <span class="k">as</span> <span class="nn">gs</span>
+<span class="kn">import</span> <span class="nn">problem01</span> <span class="k">as</span> <span class="nn">pm</span>
+<span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
+<span class="kn">from</span> <span class="nn">threading</span> <span class="kn">import</span> <span class="n">Barrier</span>
+
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Setting up problems.&quot;</span><span class="p">)</span>
+<span class="n">A</span> <span class="o">=</span> <span class="mf">4.0</span>
+<span class="n">L</span> <span class="o">=</span> <span class="mf">3.0</span>
+<span class="n">nn</span> <span class="o">=</span> <span class="mi">101</span>
+<span class="n">maxiter</span> <span class="o">=</span> <span class="mi">10000</span>
+<span class="n">tol</span> <span class="o">=</span> <span class="mf">5e-5</span>
+<span class="n">nthread</span> <span class="o">=</span> <span class="mi">4</span>
+
+<span class="n">probs_rbv</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span>
+                                        <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">zero_rhs</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">nthread</span><span class="p">),</span>
+          <span class="s1">&#39;sinusoidal&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span>
+                                    <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">sin_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">nthread</span><span class="p">),</span>
+               <span class="s1">&#39;cubic&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span>
+                                    <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">cub_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">nthread</span><span class="p">)}</span>
+<span class="c1">#%%</span>
+<span class="k">class</span> <span class="nc">Updater</span><span class="p">():</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nthread</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">barrier</span> <span class="o">=</span> <span class="n">Barrier</span><span class="p">(</span><span class="n">nthread</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">par_update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
+        <span class="k">pass</span>
+        <span class="n">uold</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rm</span><span class="p">]</span><span class="o">+</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rp</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">barrier</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+        <span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bm</span><span class="p">]</span><span class="o">+</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bp</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">])</span> 
+        <span class="n">err_num</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">((</span><span class="n">uold</span> <span class="o">-</span> <span class="n">u</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">err_den</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">u</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">err_num</span><span class="p">,</span> <span class="n">err_den</span>
+
+<span class="c1">#%% Partitioned Iterations</span>
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Running partitioned RB iteration.&quot;</span><span class="p">)</span>
+<span class="n">updater</span> <span class="o">=</span> <span class="n">Updater</span><span class="p">(</span><span class="n">nthread</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Solving </span><span class="si">{}</span><span class="s2"> problem.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">maxiter</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+    <span class="n">converged</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">it</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxiter</span><span class="p">):</span>
+        <span class="n">err_num</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">err_den</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">up</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="n">sp</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">parts</span><span class="p">()</span>
+        <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">()</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="n">executor</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">updater</span><span class="o">.</span><span class="n">par_update</span><span class="p">,</span> <span class="n">up</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="n">sp</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">en</span><span class="p">,</span> <span class="n">ed</span> <span class="ow">in</span> <span class="n">res</span><span class="p">:</span>
+                <span class="n">err_num</span>  <span class="o">+=</span> <span class="n">en</span>
+                <span class="n">err_den</span>  <span class="o">+=</span> <span class="n">ed</span>
+        <span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">err_num</span><span class="o">/</span><span class="n">err_den</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">tol</span><span class="p">:</span>
+            <span class="n">converged</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> converged after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                                                          <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">it</span><span class="p">))</span>
+            <span class="k">break</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">converged</span><span class="p">:</span>
+        <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> failed to converge after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                                                          <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">it</span><span class="p">))</span>
+    <span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">resize</span><span class="p">(</span><span class="n">err</span><span class="p">,</span> <span class="n">it</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">hist</span> <span class="o">=</span> <span class="n">err</span>
+
+<span class="n">figs</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">3</span><span class="p">),</span>
+     <span class="s1">&#39;sinusoidal&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">4</span><span class="p">),</span>
+          <span class="s1">&#39;cubic&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="mi">5</span><span class="p">)}</span>
+
+<span class="n">styles</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;rb&#39;</span><span class="p">:</span> <span class="s1">&#39;r+&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;rbv&#39;</span><span class="p">:</span> <span class="s1">&#39;b&#39;</span><span class="p">}</span>
+
+<span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Solution for problem </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">yscale</span><span class="p">(</span><span class="s1">&#39;log&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> problem convergence history&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+
+<span class="c1"># Plot graphs correctly</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">,</span> <span class="n">styles</span><span class="p">[</span><span class="s1">&#39;rbv&#39;</span><span class="p">])</span>     
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">hist</span><span class="p">,</span> <span class="n">styles</span><span class="p">[</span><span class="s1">&#39;rbv&#39;</span><span class="p">])</span>    
+</code></pre></div></td></tr></table></div>
+
+<h2 id="paralelizacao-por-subdomnios">Paralelização por subdomníos</h2>
+<p>A implementação acima de certa forma não forma do problema que descrevemos no começo
+desta seção, a criação de um novo thread para cada partição em cada iteração.</p>
+<p>Na maioria dos sistemas operacionais e linguagens de programação, a criação de threads é muito
+rápida, particularmente quando comparada ao custo de atualização de cada partição, e isto não
+seria um problema real.</p>
+<p>É interessante, no entanto, em preparação para a implementação paralela com processos que não
+compartilham memória, desenvolver uma implementação na qual é criado um único threado para cada 
+subdomínio, que realiza todas as iterações e sincroniza quando necessário com os vizinhos.</p>
+<p>Isto torna o programa um pouco mais complicado, pois agora é necessário garantir o acesso exclusivo
+a variáveis compartilhadas e computar resultados com informações que estão sendo computadas por
+threads distintos.</p>
+<p>Uma implementação desta técnica está mostrada abaixo. Há várias coisas interessantes nesta
+implementação:</p>
+<ol>
+<li>Toda a lógica de atualização foi movida para uma classe, onde as variáveis compartilhadas
+   por todos os threads são membros do objeto, e as variáveis replicadas em cada thread são
+   as variáveis locais da função membro <code>par_update()</code>.</li>
+<li>O cálculo da norma e a verificação da convergência são feitos por um único thread, os
+   outros esperam e apenas leem o resultado deste teste.</li>
+<li>Cada thread calcula a parcela correspondente da norma do erro e a guarda em uma posição
+   própria de um vetor compartilhado por todos os threads, então não há necessidade de locks.</li>
+<li>Ou todos os threads convergem, ou ninguém converge, todos os threads retornam um valor apenas
+   por simetria, isto não é estritamente necessário.</li>
+</ol>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">  1</span>
+<span class="normal">  2</span>
+<span class="normal">  3</span>
+<span class="normal">  4</span>
+<span class="normal">  5</span>
+<span class="normal">  6</span>
+<span class="normal">  7</span>
+<span class="normal">  8</span>
+<span class="normal">  9</span>
+<span class="normal"> 10</span>
+<span class="normal"> 11</span>
+<span class="normal"> 12</span>
+<span class="normal"> 13</span>
+<span class="normal"> 14</span>
+<span class="normal"> 15</span>
+<span class="normal"> 16</span>
+<span class="normal"> 17</span>
+<span class="normal"> 18</span>
+<span class="normal"> 19</span>
+<span class="normal"> 20</span>
+<span class="normal"> 21</span>
+<span class="normal"> 22</span>
+<span class="normal"> 23</span>
+<span class="normal"> 24</span>
+<span class="normal"> 25</span>
+<span class="normal"> 26</span>
+<span class="normal"> 27</span>
+<span class="normal"> 28</span>
+<span class="normal"> 29</span>
+<span class="normal"> 30</span>
+<span class="normal"> 31</span>
+<span class="normal"> 32</span>
+<span class="normal"> 33</span>
+<span class="normal"> 34</span>
+<span class="normal"> 35</span>
+<span class="normal"> 36</span>
+<span class="normal"> 37</span>
+<span class="normal"> 38</span>
+<span class="normal"> 39</span>
+<span class="normal"> 40</span>
+<span class="normal"> 41</span>
+<span class="normal"> 42</span>
+<span class="normal"> 43</span>
+<span class="normal"> 44</span>
+<span class="normal"> 45</span>
+<span class="normal"> 46</span>
+<span class="normal"> 47</span>
+<span class="normal"> 48</span>
+<span class="normal"> 49</span>
+<span class="normal"> 50</span>
+<span class="normal"> 51</span>
+<span class="normal"> 52</span>
+<span class="normal"> 53</span>
+<span class="normal"> 54</span>
+<span class="normal"> 55</span>
+<span class="normal"> 56</span>
+<span class="normal"> 57</span>
+<span class="normal"> 58</span>
+<span class="normal"> 59</span>
+<span class="normal"> 60</span>
+<span class="normal"> 61</span>
+<span class="normal"> 62</span>
+<span class="normal"> 63</span>
+<span class="normal"> 64</span>
+<span class="normal"> 65</span>
+<span class="normal"> 66</span>
+<span class="normal"> 67</span>
+<span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">numpy</span>  <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">gssup05</span> <span class="k">as</span> <span class="nn">gs</span>
+<span class="kn">import</span> <span class="nn">problem01</span> <span class="k">as</span> <span class="nn">pm</span>
+<span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
+<span class="kn">from</span> <span class="nn">threading</span> <span class="kn">import</span> <span class="n">Barrier</span>
+
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+
+
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Setting up problems.&quot;</span><span class="p">)</span>
+<span class="n">A</span> <span class="o">=</span> <span class="mf">4.0</span>
+<span class="n">L</span> <span class="o">=</span> <span class="mf">3.0</span>
+<span class="n">nn</span> <span class="o">=</span> <span class="mi">22</span>
+<span class="n">maxiter</span> <span class="o">=</span> <span class="mi">10000</span>
+<span class="n">tol</span> <span class="o">=</span> <span class="mf">5e-5</span>
+<span class="n">nthread</span> <span class="o">=</span> <span class="mi">4</span>
+
+<span class="n">probs_rbv</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span>
+                                        <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">zero_rhs</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">nthread</span><span class="p">),</span>
+          <span class="s1">&#39;sinusoidal&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span>
+                                    <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">sin_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">nthread</span><span class="p">),</span>
+               <span class="s1">&#39;cubic&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span>
+                                   <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">cub_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">nthread</span><span class="p">)}</span>
+
+<span class="c1">#%%</span>
+<span class="k">class</span> <span class="nc">Updater</span><span class="p">():</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nthread</span><span class="p">,</span> <span class="n">tol</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Performs parallel iterations on all subdomains.</span>
+
+<span class="sd">        nthread: number of threads to launch</span>
+<span class="sd">        tol:    iterative update tolerance</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># These are all shared among all threads</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tol</span> <span class="o">=</span> <span class="n">tol</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">barrier</span> <span class="o">=</span> <span class="n">Barrier</span><span class="p">(</span><span class="n">nthread</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">maxiter</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">err_num</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">err_den</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">err_num_t</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">nthread</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">err_den_t</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">nthread</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">par_update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">thread_idx</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Run the iterarions for each subdomain in parallel</span>
+
+<span class="sd">        u: view of the partition for the unknown</span>
+<span class="sd">        f: view of the partitions for the rhs</span>
+<span class="sd">        s: RB orderings for this partition</span>
+<span class="sd">        thread_idx: this thread id</span>
+<span class="sd">        &quot;&quot;&quot;</span>  
+        <span class="n">converged</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">for</span> <span class="n">it</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxiter</span><span class="p">):</span>
+            <span class="n">uold</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rm</span><span class="p">]</span><span class="o">+</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rp</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">barrier</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+            <span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bm</span><span class="p">]</span><span class="o">+</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bp</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">])</span> 
+            <span class="bp">self</span><span class="o">.</span><span class="n">err_num_t</span><span class="p">[</span><span class="n">thread_idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">((</span><span class="n">uold</span> <span class="o">-</span> <span class="n">u</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">err_den_t</span><span class="p">[</span><span class="n">thread_idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">u</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">barrier</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">thread_idx</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">en</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">err_num_t</span><span class="p">)</span>
+                <span class="n">ed</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">err_den_t</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">en</span><span class="o">/</span><span class="n">ed</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">barrier</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>                 <span class="c1"># This one was hard af.</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tol</span><span class="p">:</span>
+                <span class="n">converged</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">break</span>
+        <span class="k">return</span> <span class="n">converged</span><span class="p">,</span> <span class="n">it</span><span class="o">+</span><span class="mi">1</span>
+
+<span class="c1">##%%  Does a single thread for each partition from beginning to the end</span>
+<span class="n">updater</span> <span class="o">=</span> <span class="n">Updater</span><span class="p">(</span><span class="n">nthread</span><span class="p">,</span> <span class="n">tol</span><span class="p">)</span>
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Running partitioned RB iteration.&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Solving </span><span class="si">{}</span><span class="s2"> problem.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">up</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="n">sp</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">parts</span><span class="p">()</span>
+    <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">()</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">executor</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">updater</span><span class="o">.</span><span class="n">par_update</span><span class="p">,</span> <span class="n">up</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="n">sp</span><span class="p">,</span> <span class="nb">range</span><span class="p">(</span><span class="n">nthread</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">conv</span><span class="p">,</span> <span class="n">nit</span> <span class="ow">in</span> <span class="n">res</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">conv</span><span class="p">:</span>                
+                <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> failed to converge after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                    <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">nit</span><span class="p">))</span>
+            <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> converged after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                                                          <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">nit</span><span class="p">))</span>
+            <span class="c1"># either everyones did or no one did</span>
+            <span class="n">p</span><span class="o">.</span><span class="n">hist</span> <span class="o">=</span> <span class="n">updater</span><span class="o">.</span><span class="n">err</span><span class="p">[:</span><span class="n">nit</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="k">break</span>
+
+<span class="n">figs</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">3</span><span class="p">),</span>
+     <span class="s1">&#39;sinusoidal&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">4</span><span class="p">),</span>
+          <span class="s1">&#39;cubic&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="mi">5</span><span class="p">)}</span>
+
+<span class="n">styles</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;rb&#39;</span><span class="p">:</span> <span class="s1">&#39;r+&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;rbv&#39;</span><span class="p">:</span> <span class="s1">&#39;b&#39;</span><span class="p">}</span>
+
+<span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Solution for problem </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">yscale</span><span class="p">(</span><span class="s1">&#39;log&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> problem convergence history&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+
+<span class="c1"># Plot graphs correctly</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">,</span> <span class="n">styles</span><span class="p">[</span><span class="s1">&#39;rbv&#39;</span><span class="p">])</span>     
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">hist</span><span class="p">,</span> <span class="n">styles</span><span class="p">[</span><span class="s1">&#39;rbv&#39;</span><span class="p">])</span>    
+</code></pre></div></td></tr></table></div>
+
+<p>O cálculo da norma do erro no programa está feito de uma forma muito mais característica de um
+programa que segue o modelo de memória distribuída do que um implementado segundo o
+modelo de memória compartilhada. Fizemos isto propositalmente, por compatibilidade, mas
+é interessante ver como seria a implementação mais clássica de um modelo de memória compartilhada.</p>
+<p>A principal diferença é que os resultados das acumulações mostradas nas linhas 66 e 67 acima
+seriam guardados diretamente em variável compartilhadas por todos os threads, protegidas
+por um <code>lock</code> para evitar conflitos de acesso. A implementação a seguir tem esta modificação, mas
+a implementação anterior continua nossa preferida.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">  1</span>
+<span class="normal">  2</span>
+<span class="normal">  3</span>
+<span class="normal">  4</span>
+<span class="normal">  5</span>
+<span class="normal">  6</span>
+<span class="normal">  7</span>
+<span class="normal">  8</span>
+<span class="normal">  9</span>
+<span class="normal"> 10</span>
+<span class="normal"> 11</span>
+<span class="normal"> 12</span>
+<span class="normal"> 13</span>
+<span class="normal"> 14</span>
+<span class="normal"> 15</span>
+<span class="normal"> 16</span>
+<span class="normal"> 17</span>
+<span class="normal"> 18</span>
+<span class="normal"> 19</span>
+<span class="normal"> 20</span>
+<span class="normal"> 21</span>
+<span class="normal"> 22</span>
+<span class="normal"> 23</span>
+<span class="normal"> 24</span>
+<span class="normal"> 25</span>
+<span class="normal"> 26</span>
+<span class="normal"> 27</span>
+<span class="normal"> 28</span>
+<span class="normal"> 29</span>
+<span class="normal"> 30</span>
+<span class="normal"> 31</span>
+<span class="normal"> 32</span>
+<span class="normal"> 33</span>
+<span class="normal"> 34</span>
+<span class="normal"> 35</span>
+<span class="normal"> 36</span>
+<span class="normal"> 37</span>
+<span class="normal"> 38</span>
+<span class="normal"> 39</span>
+<span class="normal"> 40</span>
+<span class="normal"> 41</span>
+<span class="normal"> 42</span>
+<span class="normal"> 43</span>
+<span class="normal"> 44</span>
+<span class="normal"> 45</span>
+<span class="normal"> 46</span>
+<span class="normal"> 47</span>
+<span class="normal"> 48</span>
+<span class="normal"> 49</span>
+<span class="normal"> 50</span>
+<span class="normal"> 51</span>
+<span class="normal"> 52</span>
+<span class="normal"> 53</span>
+<span class="normal"> 54</span>
+<span class="normal"> 55</span>
+<span class="normal"> 56</span>
+<span class="normal"> 57</span>
+<span class="normal"> 58</span>
+<span class="normal"> 59</span>
+<span class="normal"> 60</span>
+<span class="normal"> 61</span>
+<span class="normal"> 62</span>
+<span class="normal"> 63</span>
+<span class="normal"> 64</span>
+<span class="normal"> 65</span>
+<span class="normal"> 66</span>
+<span class="normal"> 67</span>
+<span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">numpy</span>  <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">gssup05</span> <span class="k">as</span> <span class="nn">gs</span>
+<span class="kn">import</span> <span class="nn">problem01</span> <span class="k">as</span> <span class="nn">pm</span>
+<span class="kn">from</span> <span class="nn">concurrent.futures</span> <span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
+<span class="kn">from</span> <span class="nn">threading</span> <span class="kn">import</span> <span class="n">Barrier</span><span class="p">,</span> <span class="n">Lock</span>
+
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+
+
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Setting up problems.&quot;</span><span class="p">)</span>
+<span class="n">A</span> <span class="o">=</span> <span class="mf">4.0</span>
+<span class="n">L</span> <span class="o">=</span> <span class="mf">3.0</span>
+<span class="n">nn</span> <span class="o">=</span> <span class="mi">22</span>
+<span class="n">maxiter</span> <span class="o">=</span> <span class="mi">10000</span>
+<span class="n">tol</span> <span class="o">=</span> <span class="mf">5e-5</span>
+<span class="n">nthread</span> <span class="o">=</span> <span class="mi">4</span>
+
+<span class="n">probs_rbv</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span>
+                                        <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">zero_rhs</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">nthread</span><span class="p">),</span>
+          <span class="s1">&#39;sinusoidal&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span>
+                                    <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">sin_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">nthread</span><span class="p">),</span>
+               <span class="s1">&#39;cubic&#39;</span><span class="p">:</span> <span class="n">pm</span><span class="o">.</span><span class="n">PartitionedProblem</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">UL</span><span class="o">=</span><span class="n">A</span><span class="p">,</span>
+                                   <span class="n">calc_rhs</span><span class="o">=</span><span class="n">gs</span><span class="o">.</span><span class="n">cub_rhs</span><span class="p">,</span> <span class="n">A</span><span class="o">=</span><span class="n">A</span><span class="p">,</span> <span class="n">npart</span><span class="o">=</span><span class="n">nthread</span><span class="p">)}</span>
+
+<span class="c1">#%%</span>
+<span class="k">class</span> <span class="nc">Updater</span><span class="p">():</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nthread</span><span class="p">,</span> <span class="n">tol</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Performs parallel iterations on all subdomains.</span>
+
+<span class="sd">        nthread: number of threads to launch</span>
+<span class="sd">        tol:    iterative update tolerance</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># These are all shared among all threads</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tol</span> <span class="o">=</span> <span class="n">tol</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">barrier</span> <span class="o">=</span> <span class="n">Barrier</span><span class="p">(</span><span class="n">nthread</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lock</span> <span class="o">=</span> <span class="n">Lock</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">maxiter</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">err_num</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">err_den</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+    <span class="k">def</span> <span class="nf">par_update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">thread_idx</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Run the iterarions for each subdomain in parallel</span>
+
+<span class="sd">        u: view of the partition for the unknown</span>
+<span class="sd">        f: view of the partitions for the rhs</span>
+<span class="sd">        s: RB orderings for this partition</span>
+<span class="sd">        thread_idx: this thread id</span>
+<span class="sd">        &quot;&quot;&quot;</span>  
+        <span class="n">converged</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">for</span> <span class="n">it</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxiter</span><span class="p">):</span>
+            <span class="n">uold</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rm</span><span class="p">]</span><span class="o">+</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Rp</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">R</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">barrier</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+            <span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="p">(</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bm</span><span class="p">]</span><span class="o">+</span><span class="n">u</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">Bp</span><span class="p">]</span> <span class="o">-</span> <span class="n">p</span><span class="o">.</span><span class="n">dx2</span><span class="o">*</span><span class="n">f</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">B</span><span class="p">])</span> 
+            <span class="n">err_num_t</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">((</span><span class="n">uold</span> <span class="o">-</span> <span class="n">u</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+            <span class="n">err_den_t</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">u</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">err_num</span> <span class="o">+=</span> <span class="n">err_num_t</span> 
+                <span class="bp">self</span><span class="o">.</span><span class="n">err_den</span> <span class="o">+=</span> <span class="n">err_den_t</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">barrier</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">thread_idx</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">err_num</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">err_den</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">err_num</span> <span class="o">=</span> <span class="mf">0.0</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">err_den</span> <span class="o">=</span> <span class="mf">0.0</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">barrier</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>                 <span class="c1"># This one was hard af.</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">err</span><span class="p">[</span><span class="n">it</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tol</span><span class="p">:</span>
+                <span class="n">converged</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">break</span>
+        <span class="k">return</span> <span class="n">converged</span><span class="p">,</span> <span class="n">it</span><span class="o">+</span><span class="mi">1</span>
+
+<span class="c1">##%%  Does a single thread for each partition from beginning to the end</span>
+<span class="n">updater</span> <span class="o">=</span> <span class="n">Updater</span><span class="p">(</span><span class="n">nthread</span><span class="p">,</span> <span class="n">tol</span><span class="p">)</span>
+<span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Running partitioned RB iteration.&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Solving </span><span class="si">{}</span><span class="s2"> problem.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">up</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="n">sp</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">parts</span><span class="p">()</span>
+    <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">()</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">executor</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">updater</span><span class="o">.</span><span class="n">par_update</span><span class="p">,</span> <span class="n">up</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="n">sp</span><span class="p">,</span> <span class="nb">range</span><span class="p">(</span><span class="n">nthread</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">conv</span><span class="p">,</span> <span class="n">nit</span> <span class="ow">in</span> <span class="n">res</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">conv</span><span class="p">:</span>                
+                <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> failed to converge after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                    <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">nit</span><span class="p">))</span>
+            <span class="n">gs</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Problem </span><span class="si">{}</span><span class="s1"> converged after </span><span class="si">{}</span><span class="s1"> iterations&#39;</span><span class="o">.</span>\
+                                                          <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">nit</span><span class="p">))</span>
+            <span class="c1"># either everyones did or no one did</span>
+            <span class="n">p</span><span class="o">.</span><span class="n">hist</span> <span class="o">=</span> <span class="n">updater</span><span class="o">.</span><span class="n">err</span><span class="p">[:</span><span class="n">nit</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="k">break</span>
+
+<span class="n">figs</span> <span class="o">=</span> <span class="p">{</span> <span class="s1">&#39;linear&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">3</span><span class="p">),</span>
+     <span class="s1">&#39;sinusoidal&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">4</span><span class="p">),</span>
+          <span class="s1">&#39;cubic&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="mi">5</span><span class="p">)}</span>
+
+<span class="n">styles</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;rb&#39;</span><span class="p">:</span> <span class="s1">&#39;r+&#39;</span><span class="p">,</span>
+         <span class="s1">&#39;rbv&#39;</span><span class="p">:</span> <span class="s1">&#39;b&#39;</span><span class="p">}</span>
+
+<span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Solution for problem </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">yscale</span><span class="p">(</span><span class="s1">&#39;log&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> problem convergence history&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+
+<span class="c1"># Plot graphs correctly</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">probs_rbv</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">u</span><span class="p">,</span> <span class="n">styles</span><span class="p">[</span><span class="s1">&#39;rbv&#39;</span><span class="p">])</span>     
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figs</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">hist</span><span class="p">,</span> <span class="n">styles</span><span class="p">[</span><span class="s1">&#39;rbv&#39;</span><span class="p">])</span>    
+</code></pre></div></td></tr></table></div>
+
+<div class="footnote">
+<hr />
+<ol>
+<li id="fn:1">
+<p>Lembrando que não adianta nada em termos de desempenho&#160;<a class="footnote-backref" href="#fnref:1" title="Jump back to footnote 1 in the text">&#8617;</a></p>
+</li>
+</ol>
+</div>
+
+  </div>
+  <footer>
+    &copy; Copyright 2019 by Ramiro Brito Willmersdorf.
+  </footer>
+</body>
+<html>

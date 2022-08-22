@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+  <head>
+     <meta charset="utf-8">
+     <link rel="stylesheet" href="../../../../static/style.css">
+     <link rel="stylesheet" href="../../../../static/pygments.css">
+     <link rel="stylesheet" href="../../../../static/styles_ch.css">
+     <script>
+         MathJax = {
+            tex: {
+               inlineMath: [['$', '$'], ['\\(', '\\)']]
+            }
+         };
+     </script>
+     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+     <title>Configuração do Anaconda</title>
+  </head>
+<body>
+  <header>
+    <h1>/ramiro/demec/ufpe</h1>
+    <nav>
+      <ul class="nav navbar-nav">
+        <li>
+          <a href="../../../../">Home</a></li>
+        
+          <li><a href="../../../../blog/">Blog</a></li>
+        
+          <li class="active"><a href="../../../">Disciplinas</a></li>
+        
+          <li><a href="../../../../bio/">Bio</a></li>
+        
+          <li><a href="../../../../contato/">Contato</a></li>
+        
+      </ul>
+    </nav>
+  </header>
+  <div class="page">
+    
+  <h2>Configuração do Anaconda</h2>
+  <h2>Documentação</h2>
+<p>A interface com o Anaconda é feita através de um programa de linha de comando chamado conda.
+Vale a pena dar uma olhada na sua <a href="https://docs.conda.io/projects/conda/en/latest/commands.html">documentação</a>.</p>
+<h2>Atualização</h2>
+<p>A primeira coisa a fazer é atualizar o sistema. Isto pode e deve ser feito periodicamente.
+Abra uma janela de comando que foi instalada com o conda e digite</p>
+<div class="hll"><pre><span></span>conda update --all
+</pre></div>
+<h2>Ambientes</h2>
+<p>O Anaconda trabalha com ambientes isolados, nos quais você pode ter versões diferentes do Python e de módulos. Inicialmente é criado um ambiente default (base), como você pode verificar com</p>
+<div class="hll"><pre><span></span>conda info --envs
+</pre></div>
+<p>Vamos criar um ambiente para o curso. Você pode escolher que pacotes quer instalar neste ambiente durante sua criação, e inclusive pode escolher a versão do Python que deseja neste ambiente, vamos deixar o ambiente vazio e ir colocando os pacotes de acordo com a necessidade.</p>
+<p>Você pode escolher o nome que quiser para o ambiente, e criar quantos quiser, mas, por uniformidade no curso, recomendo que seja criado com o nome dado no comando abaixo.</p>
+<div class="hll"><pre><span></span>conda create --name progpar
+</pre></div>
+<p>Precisamos ativar este ambiente, que se torna o ambiente padrão até que seja desativado.</p>
+<div class="hll"><pre><span></span>conda activate progpar
+</pre></div>
+<p>Para desativar este ambiente, basta digitar</p>
+<div class="hll"><pre><span></span>conda deactivate
+</pre></div>
+<p>Ou simplestemente fechar a janela de comandos.</p>
+<h2>Ambiente de Desenvolvimento Integrado</h2>
+<p>Vamos instalar uma série de pacotes para desenvolvimento em Python e programação paralela, de acordo com a necessidade. Vamos ativar o ambiente caso necessário, e instalar, inicialmente, um
+ambiente integrado de desenvolvimento (que no fim nem vamos usar muito) que é relativamente familiar para usuários de Matlab.</p>
+<div class="hll"><pre><span></span>conda activate progpar
+conta install  spyder
+</pre></div>
+<p>Não se espante com a quantidade de coisas que são instaladas como dependências.</p>
+<h2>Pacotes Necessários</h2>
+<p>Para programação científica, por enquanto, precisamos pelo menos instalar os pacotes mostrados a seguir.</p>
+<div class="hll"><pre><span></span>conda install  numpy
+conda install  matplotlib
+</pre></div>
+<h2>Teste Rápido</h2>
+<p>Abra o spyder, digite o programa a seguir e execute.</p>
+<div class="hll"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">101</span><span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">x</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="p">(</span><span class="mi">100</span><span class="o">*</span><span class="mi">100</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+</pre></div>
+
+
+  </div>
+  <footer>
+    &copy; Copyright 2019 by Ramiro Brito Willmersdorf.
+  </footer>
+</body>
+<html>

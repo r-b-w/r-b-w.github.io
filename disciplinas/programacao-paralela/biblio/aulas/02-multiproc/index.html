@@ -1,0 +1,1056 @@
+<!doctype html>
+<html>
+  <head>
+     <meta charset="utf-8">
+     <link rel="stylesheet" href="../../../../../static/style.css">
+     <link rel="stylesheet" href="../../../../../static/pygments.css">
+     <link rel="stylesheet" href="../../../../../static/styles_ch.css">
+     <script>
+         MathJax = {
+            tex: {
+               inlineMath: [['$', '$'], ['\\(', '\\)']]
+            }
+         };
+     </script>
+     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+     <title>Multiprocessamento</title>
+  </head>
+<body>
+  <header>
+    <h1>/ramiro/demec/ufpe</h1>
+    <nav>
+      <ul class="nav navbar-nav">
+        <li>
+          <a href="../../../../../">Home</a></li>
+        
+          <li><a href="../../../../../blog/">Blog</a></li>
+        
+          <li class="active"><a href="../../../../">Disciplinas</a></li>
+        
+          <li><a href="../../../../../bio/">Bio</a></li>
+        
+          <li><a href="../../../../../contato/">Contato</a></li>
+        
+      </ul>
+    </nav>
+  </header>
+  <div class="page">
+    
+  <h2>Multiprocessamento</h2>
+  <h2 id="introducao">Introdução</h2>
+<p>A linguagem Python padronizou a interface ao multiprocessamento com o módulo
+<a href="https://docs.python.org/3.7/library/multiprocessing.html">multiprocessing</a>. Esta interface 
+permite a criação a comunicação entre processos, criados local ou remotamente.</p>
+<p>A interface deste módulo replica várias características da interface do módulo de Threads,
+mas também introduz muitas novas facilidades. Vamos seguir mais ou menos o roteiro que fizemos
+quando apresentamos threds, depois vamos mostrar as novidades associadas ao multiprocessamento.</p>
+<p>É importante entender que a criação de processos e o gerenciamento da comunicação entre eles
+são características de todos os sistemas operacionais modernos, isto é feito há várias décadas, 
+pode ser acessado de muitas linguagens de programação. Por exemplo, as operações básicas do unix
+tradicional ou do linux são baseadas no modelo <a href="https://en.wikipedia.org/wiki/Fork_(system_call)">fork and join</a>. Este módulo simplesmente acrescenta uma interface melhor à esta funcionalidade.</p>
+<h2 id="pre-requisitos">Pré-requisitos</h2>
+<p>Não podemos fazer nada com multiprocessamento antes de importar o módulo de multiprocessamento, 
+que é padrão nas versões mais novas da linguagem.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">1</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+</code></pre></div></td></tr></table></div>
+
+<h2 id="processos">Processos</h2>
+<p>A classe que representa um processo é chamada <code>Process</code>, sem muitas surpresas. Depois de criado, 
+a execução de um processo deve ser iniciada com <code>.start()</code>, e podemos esperar seu término com
+<code>.join()</code>, exatamente com fazemos com threads.</p>
+<p>Vamos ver alguns exemplos abaixo, mas antes vamos criar um módulo para colocarmos as funções de
+suporte, para diminuir o volume de código repetido em cada exemplo.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">mp_support.py</span>
+
+<span class="sd">Support functions and objects for multiprocessing examples</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="n">__format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+<span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="n">__format</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%H:%M:%S&quot;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Directly logs info calls, 99% of what we&#39;re doing.&quot;&quot;&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+
+<p>Por enquanto só temos a função que faz o logging das mensagens, da mesma forma que
+para os exemplos de threading.</p>
+<p>Vamos criar um processo, da maneira mais simples possível e praticamente identicamente
+ao que fizemos para a criação de threads.
+Tradicionalmente, chamamos o processo que cria os processos de processo pai, e os processos
+que são criados de processos filhos.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">rest_for</span><span class="p">):</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Started Process </span><span class="si">{}</span><span class="s2">, sleeping for </span><span class="si">{}</span><span class="s2">s&quot;</span><span class="o">.</span>\
+            <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">rest_for</span><span class="p">))</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">rest_for</span><span class="p">)</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Process </span><span class="si">{}</span><span class="s2"> finished&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;proc_1&#39;</span><span class="p">,</span> <span class="mi">10</span><span class="p">])</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</code></pre></div></td></tr></table></div>
+
+<p>Como anteriormente, o código acima é uma maluquice, pois poderíamos ter simplesmente chamado
+a função diretamente. As vantagens começam a aparecer quando criamos múltiplos processo, o 
+que vamos fazer mais tarde. Antes disto, vamos ver outras características desta classe.</p>
+<p>Assim como com theads, podemos criar uma classe que herda da classe <code>Process</code> e redefinir o 
+método <code>.run()</code>.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">class</span> <span class="nc">RunThing</span><span class="p">(</span><span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">rest_for</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_r</span> <span class="o">=</span> <span class="n">rest_for</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Started Process </span><span class="si">{}</span><span class="s2">, sleeping for </span><span class="si">{}</span><span class="s2">s&quot;</span><span class="o">.</span>\
+               <span class="nb">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_n</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_r</span><span class="p">))</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_r</span><span class="p">)</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Process </span><span class="si">{}</span><span class="s2"> finished&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_n</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="s1">&#39;Proc_01&#39;</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</code></pre></div></td></tr></table></div>
+
+<p>O que é mais conveniente depende do contexto e do hábito do programador.</p>
+<p>Uma observação interessante é que, da mesma forma que Threads, os objetos da classe Process
+já tem uma membro <code>.name</code>, portanto este que definimos nos exemplos acima, (e todas as
+vezes que fizemos isto com threads) é redundante. Este membro é só uma conveniência e não tem 
+nenhuma função semântica. Podemos simplificar um pouco o programa acima então,</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">class</span> <span class="nc">RunThing</span><span class="p">(</span><span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rest_for</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">name</span><span class="p">:</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_r</span> <span class="o">=</span> <span class="n">rest_for</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Started Process </span><span class="si">{}</span><span class="s2">, sleeping for </span><span class="si">{}</span><span class="s2">s&quot;</span><span class="o">.</span>\
+               <span class="nb">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_r</span><span class="p">))</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_r</span><span class="p">)</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Process </span><span class="si">{}</span><span class="s2"> finished&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="s1">&#39;Proc_01&#39;</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">RunThing</span><span class="p">(</span><span class="n">rest_for</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</code></pre></div></td></tr></table></div>
+
+<p>Perceba que o Python gera um nome default caso você não atribua um.</p>
+<p>Um objeto da classe Process tem a mesma assinatura que um objeto da classe Thread. Em particular,
+podemos verificar se um processo está vivo ou não.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">class</span> <span class="nc">RunThing</span><span class="p">(</span><span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rest_for</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_r</span> <span class="o">=</span> <span class="n">rest_for</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Started Process </span><span class="si">{}</span><span class="s2">, sleeping for </span><span class="si">{}</span><span class="s2">s&quot;</span><span class="o">.</span>\
+               <span class="nb">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_r</span><span class="p">))</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_r</span><span class="p">)</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Process </span><span class="si">{}</span><span class="s2"> finished&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">procs</span> <span class="o">=</span> <span class="p">[</span> <span class="n">RunThing</span><span class="p">(</span><span class="n">rest</span><span class="p">)</span> <span class="k">for</span> <span class="n">rest</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span> <span class="p">]</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> is_alive?: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">is_alive</span><span class="p">()))</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</code></pre></div></td></tr></table></div>
+
+<p>Também podemos ver no programa acima que os processos são objetos normais que podem
+fazer parte de listas, tuplas, dicionários, etc.</p>
+<p>Os processos também tem membros que não existem em Threads, como <code>pid</code>, que é número do
+processo, <code>exitcode</code>, que é o código de erro de saída do processo filho.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">rest</span><span class="p">):</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="mi">10</span><span class="o">/</span><span class="n">data</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">rest</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">procs</span> <span class="o">=</span> <span class="p">[</span><span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">r</span><span class="p">))</span> <span class="k">for</span> <span class="n">d</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span>\
+                 <span class="nb">zip</span><span class="p">((</span><span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span> <span class="p">]</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{name}</span><span class="s2"> has pid </span><span class="si">{pid}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">pid</span><span class="o">=</span><span class="n">p</span><span class="o">.</span><span class="n">pid</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> exit code is: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">exitcode</span><span class="p">))</span>
+</code></pre></div></td></tr></table></div>
+
+<p>Existem outros membros desta classe que provavelmente não devem ser usadas por pessoas
+normais em condições normais. Você pode ver a documentação do módulo se estiver interessado.</p>
+<h2 id="mecanismos-de-lancamento-de-processos">Mecanismos de lançamento de Processos</h2>
+<p>Infelizmente o mecanismo para criação de processos é um pouco dependente da plataforma
+na qual o programa está rodando. Há três alternativas:</p>
+<dl>
+<dt>spawn</dt>
+<dd>O processo pai dá partida a um novo interpretador do Python. O processo filho só herda
+  o estritamente necessário para rodar o seu método <code>run()</code>. Isto é bem caro comparado com
+  os outros, existe no Unix e no Windoes e é o padrão no Windows.</dd>
+<dt>fork</dt>
+<dd>O processo pai chama <code>os.fork()</code>, que cria uma cópia na memória do interpretador Python.
+  O processo filhor é idêntico ao processo pai, quando começa, e todos os seus recursos são
+  herdados, como arquivos abertos, etc. Não é uma boa ideia usar isto se o processo pai for 
+  multithreaded. Só existe no Unix, onde é o padrão. </dd>
+<dt>forkserver</dt>
+<dd>O sistema cria um processo servidor responsável pela criação de processos através do
+ <code>os.fork()</code>. Este processo é single threaded então pode chamar fork sem problemas. Nada
+  não essencial é compartilhado. Disponível em apenas algumas versões do Unix.</dd>
+</dl>
+<p>Para escolher o mecanismo de lançamento de processos usamos a função <code>set_start_method()</code> do 
+módulo <code>multiprocessing</code>, que só deve ser chamada uma vez por programa, na parte que é executada
+uma única vez!</p>
+<p>Este programa pode não funcionar, dependendo de onde o programa é executado. Em particular, 
+não funciona se você rodar dentro do spyder no linux, que já seleciona o contexto
+automaticamente.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">class</span> <span class="nc">RunThing</span><span class="p">(</span><span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rest_for</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_r</span> <span class="o">=</span> <span class="n">rest_for</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Started Process </span><span class="si">{}</span><span class="s2">, sleeping for </span><span class="si">{}</span><span class="s2">s&quot;</span><span class="o">.</span>\
+               <span class="nb">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_r</span><span class="p">))</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_r</span><span class="p">)</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Process </span><span class="si">{}</span><span class="s2"> finished&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">methods</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;spawn&#39;</span><span class="p">,</span> <span class="s1">&#39;fork&#39;</span><span class="p">,</span> <span class="s1">&#39;forkserver&#39;</span><span class="p">)</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">methods</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Created processes with </span><span class="si">{}</span><span class="s2"> method&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">m</span><span class="p">))</span>
+    <span class="n">mp</span><span class="o">.</span><span class="n">set_start_method</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
+    <span class="n">procs</span> <span class="o">=</span> <span class="p">[</span> <span class="n">RunThing</span><span class="p">(</span><span class="n">rest</span><span class="p">)</span> <span class="k">for</span> <span class="n">rest</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span> <span class="p">]</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">pid</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</code></pre></div></td></tr></table></div>
+
+<p>Por este e outros motivos é importante que 
+você se certifique que o código que vai ser executado como um novo processo pode
+ser carregado como um módulo sem que ele tente gerar outros processos. Por exemplo, o código
+a seguir falha.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">rest_for</span><span class="p">):</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Started Process </span><span class="si">{}</span><span class="s2">, sleeping for </span><span class="si">{}</span><span class="s2">s&quot;</span><span class="o">.</span>\
+            <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">rest_for</span><span class="p">))</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">rest_for</span><span class="p">)</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Process </span><span class="si">{}</span><span class="s2"> finished&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+
+<span class="n">mp</span><span class="o">.</span><span class="n">set_start_method</span><span class="p">(</span><span class="s1">&#39;spawn&#39;</span><span class="p">)</span>
+<span class="n">p</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;proc_1&#39;</span><span class="p">,</span> <span class="mi">10</span><span class="p">])</span>
+<span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</code></pre></div></td></tr></table></div>
+
+<p>Perceba que a única diferença é a falta da proteção da linha</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal">1</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+</code></pre></div></td></tr></table></div>
+
+<p>que impede que o resto do arquivo seja executado quando é carregado como um módulo.</p>
+<p>É interessante rodar o programa abaixo com os três métodos de lançamento e estudar
+os resultados no seu sistema.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">os</span>
+
+<span class="k">def</span> <span class="nf">showids</span><span class="p">(</span><span class="n">title</span><span class="p">):</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">title</span><span class="p">)</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Module name: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="vm">__name__</span><span class="p">))</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Parent process id: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getppid</span><span class="p">()))</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;This process id: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getpid</span><span class="p">()))</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">myId</span><span class="p">,</span> <span class="n">rest_for</span><span class="p">):</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;Proc_</span><span class="si">{:02d}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">myId</span><span class="p">)</span>
+    <span class="n">showids</span><span class="p">(</span><span class="s1">&#39;*** run_thing &#39;</span><span class="o">+</span><span class="n">name</span><span class="p">)</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Started Process </span><span class="si">{}</span><span class="s2">, sleeping for </span><span class="si">{}</span><span class="s2">s&quot;</span><span class="o">.</span>\
+            <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">rest_for</span><span class="p">))</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">rest_for</span><span class="p">)</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Process </span><span class="si">{}</span><span class="s2"> finished&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">mp</span><span class="o">.</span><span class="n">set_start_method</span><span class="p">(</span><span class="s1">&#39;spawn&#39;</span><span class="p">)</span>
+    <span class="n">showids</span><span class="p">(</span><span class="s1">&#39;*** Main program&#39;</span><span class="p">)</span>
+    <span class="n">p1</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">])</span>
+    <span class="n">p2</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">])</span>
+    <span class="n">p1</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">p2</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">p1</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+    <span class="n">p2</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</code></pre></div></td></tr></table></div>
+
+<h2 id="comunicacao">Comunicação</h2>
+<p>O processos normalmente tem que trocar informações durante a execução de um programa,
+e não podem fazer isto através de variáveis compartilhadas. Há algumas classes que permitem
+a comunicação entre processos filhos e entre o processo pai e seus filhos.</p>
+<p>É claro que existe uma comunicação entre pai e filhos que pode ser feita através da passagem
+de argumentos e retorno de valores de função, mas precisamos de mecanismos mais gerais.</p>
+<h3 id="queues">Queues</h3>
+<p>Uma fila (Queue) é uma implementação para multiprocessamento da estrutura de dados sequencial
+<a href="https://docs.python.org/3.7/library/queue.html#queue.Queue">Queue</a>. Basicamente, é uma sacola onde
+você vai enfiando e tirando coisas, com a garantia de que as coisas saem na mesma ordem que entraram,
+isto é, o primeiro que entra é o primeiro que sai, bem, como em um fila.</p>
+<p>Você pode atribuir um tamanho máximo à fila, ou ela pode crescer indefinidamente, enquanto houver memória.
+Se a fila estiver cheia, a chamada que adiciona items à fila bloqueia até que haja espaço ou ocorra
+um timeout.</p>
+<p>Um exemplo simples está mostrado a seguir.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">from</span>   <span class="nn">numpy.random</span> <span class="kn">import</span> <span class="n">randint</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">q</span><span class="p">):</span>
+    <span class="n">q</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">10</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">q</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">q</span><span class="p">])</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+    <span class="c1"># Process already dead</span>
+    <span class="k">while</span> <span class="ow">not</span> <span class="n">q</span><span class="o">.</span><span class="n">empty</span><span class="p">():</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Got item: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">get</span><span class="p">()))</span>
+</code></pre></div></td></tr></table></div>
+
+<p>Uma fila pode ter vários processos alimentando e vários processos consumindo, e, como estamos no mundo
+encantado do Python, os objetos podem ser de qualquer tipo, dentro da razoabilidade. Não é uma boa ideia
+querer enviar um handle de um arquivo aberto de um processo para outro que pode estar em uma outra
+máquina que sequer tem acesso àquele arquivo, por exemplo.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">queue</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">random</span>
+
+<span class="k">def</span> <span class="nf">waitabit</span><span class="p">():</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">()</span><span class="o">+</span><span class="mf">0.1</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">run_thing_a</span><span class="p">(</span><span class="n">q</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">20</span><span class="p">):</span>
+        <span class="n">waitabit</span><span class="p">()</span>  
+        <span class="n">q</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;run_thing_a put everything.&quot;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">run_thing_b</span><span class="p">(</span><span class="n">q</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="s2">&quot;qwertyuiopasdfghjklçzxcvmbn&lt;&gt;&quot;</span><span class="p">:</span>
+        <span class="n">waitabit</span><span class="p">()</span>  
+        <span class="n">q</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">l</span><span class="p">)</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;run_thing_b put everything.&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">run_thing_c</span><span class="p">(</span><span class="n">q</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="s2">&quot;!@#$%*(*()_+=§{[ªº}{]/?°;:\|&quot;</span><span class="p">:</span>
+        <span class="n">waitabit</span><span class="p">()</span>  
+        <span class="n">q</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">l</span><span class="p">)</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;run_thing_c put everything.&quot;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">get_thing</span><span class="p">(</span><span class="n">q</span><span class="p">):</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span> <span class="c1"># Need a better termination control</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Got item: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">2</span><span class="p">)))</span>
+        <span class="k">except</span> <span class="n">queue</span><span class="o">.</span><span class="n">Empty</span><span class="p">:</span>
+            <span class="k">break</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">q</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+    <span class="n">procs</span> <span class="o">=</span> <span class="p">[</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">run_thing_a</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">q</span><span class="p">]),</span>
+              <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">run_thing_b</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">q</span><span class="p">]),</span>
+              <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">run_thing_c</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">q</span><span class="p">]),</span>
+              <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">get_thing</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">q</span><span class="p">]),</span>
+              <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">get_thing</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">q</span><span class="p">])]</span>
+
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Father finished waiting.&quot;</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+
+<p>Um problema com o programa acima é que não sabemos a priori quantos items serão colocados
+na fila. Do jeito que o programa está feito, não podemos apenas verificar se a fila está vazia,
+pois, como os processos podem ser lançados em qualquer ordem, não é inconcebível que um
+consumidor teste a fila antes de qualquer produtor colocar alguma coisa dentro. Além disto,
+podemos dar o azar de que, devido aos atrasos na produção, não haja nada fila, mas os produtores
+não terminaram ainda.
+Por isto temos aquele laço infinito na linha 30 do qual só escapamos com um timeout. </p>
+<p>Timeouts como agentes de controle do fluxo de execução do programa são normalmente muito questionáveis, 
+devido à dificuldade em se estabelecer valores que não causem paradas falsas ou que não atrasem
+demais a execução.  No entanto, com o que temos até agora, não temos outra alternativa que 
+não complicasse demasiadamente o programa. </p>
+<p>Uma primeira ideia seria cada produtor enviar uma &ldquo;sentinela&rdquo;, um valor especial que não
+deve ser processado para avisar que já encerrou a produção. O problema é que o produtor
+não sabe qual consumidor vai receber aquela sentinela, é possível que um único produtor
+receba todas e o outro não saiba que os produtores encerraram. </p>
+<p>É possível, por exemplo, cada produtor enviar um número de sentinelas igual ao número de consumidores.
+Cada consumidor lê sentinelas até que o número de sentinelas lidas seja igual ao de produtores,
+e quando isto acontece, encerra suas atividades. </p>
+<p>O programa abaixo implementa isto e também algumas óbvias melhorias em relação ao anterior.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">random</span>
+
+<span class="n">sentinel</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+
+<span class="k">def</span> <span class="nf">waitabit</span><span class="p">():</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">()</span><span class="o">+</span><span class="mf">0.1</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">ncons</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">data</span><span class="p">:</span>
+        <span class="n">waitabit</span><span class="p">()</span>  
+        <span class="n">q</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ncons</span><span class="p">):</span>
+        <span class="n">q</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">sentinel</span><span class="p">)</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;run_thing put everything.&quot;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">get_thing</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">nprod</span><span class="p">):</span>
+    <span class="n">np</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">while</span> <span class="n">np</span> <span class="o">&lt;</span> <span class="n">nprod</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">data</span> <span class="o">!=</span> <span class="n">sentinel</span><span class="p">:</span>
+            <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Got item: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">np</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Consumer finished!&quot;</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">25</span><span class="p">),</span>
+            <span class="s2">&quot;qwertyuiopasdfghjklçzxcvmbn&lt;&gt;&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;!@#$%*(*()_+=§{[ªº}{]/?°;:\|&quot;</span><span class="p">)</span>
+    <span class="n">q</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+    <span class="n">ncons</span> <span class="o">=</span> <span class="mi">2</span>
+    <span class="n">nprod</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="n">prods</span> <span class="o">=</span> <span class="p">[</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">q</span><span class="p">,</span> <span class="n">ncons</span><span class="p">,</span> <span class="n">d</span><span class="p">])</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">data</span><span class="p">]</span>
+    <span class="n">cons</span> <span class="o">=</span> <span class="p">[</span><span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">get_thing</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">q</span><span class="p">,</span> <span class="n">nprod</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ncons</span><span class="p">)]</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">prods</span><span class="o">+</span><span class="n">cons</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">prods</span><span class="o">+</span><span class="n">cons</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Father finished waiting.&quot;</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+
+<p>Percebam que o programa acima não trata de um dos principais problemas deste tipo de sistema, que é
+como garantir que todos os consumidores recebam mais ou menos a mesma quantidade de dados. Não há nenhuma
+garantia de que um dos consumidores não processe todos os dados que foram colocados na fila, por exemplo.
+Evitar isto é um problema <strong>bem</strong> mais sofisticado que vamos fingir que não existe, mas que pode ser 
+tratado com a criação de um scheduler que imponha alguma &ldquo;justiça&rdquo; na divisão do trabalho. Quem
+estiver interessado neste assunto deve consultar algum livro sobre implementação de sistemas operacionais.</p>
+<h3 id="pipes">Pipes</h3>
+<p>Devido ao fato de filas serem bem genéricas, existe outra classe de objetos usados para comunicação que é
+mais específica, que são os <code>pipes</code>, que, essencialmente, são filas que tem apenas dois processos. Os pipes
+podem ser unidirecionais ou bidirecionais, e podem ser criados entre quaisquer dois processos, que podem ser 
+irmãos ou pai e filho.</p>
+<p>Um item é enviado com <code>.send()</code> em uma extremidade e recebido com <code>.recv()</code> na outra. Também existem versões
+que enviam buffers de bytes diretamente se este for o seu interesse.</p>
+<p>Vamos ver um exemplo bem simples de um pipe em ação.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">random</span>
+
+<span class="n">sentinel</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+
+<span class="k">def</span> <span class="nf">waitabit</span><span class="p">():</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">()</span><span class="o">+</span><span class="mf">0.1</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">run_thing</span><span class="p">(</span><span class="n">pipe</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="s2">&quot;!@#$%*(*()_+=§{[ªº}{]/?°;:\|&quot;</span><span class="p">:</span>
+        <span class="n">waitabit</span><span class="p">()</span>  
+        <span class="n">pipe</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">l</span><span class="p">)</span>
+    <span class="n">pipe</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sentinel</span><span class="p">)</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;run_thing sent everything.&quot;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">get_thing</span><span class="p">(</span><span class="n">pipe</span><span class="p">):</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span> <span class="c1"># Need a better termination control</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+        <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Got item: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">data</span> <span class="o">==</span> <span class="n">sentinel</span><span class="p">:</span>
+            <span class="k">break</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">pend1</span><span class="p">,</span> <span class="n">pend2</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Pipe</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span> <span class="c1"># not duplex</span>
+    <span class="n">procs</span> <span class="o">=</span> <span class="p">[</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">run_thing</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">pend1</span><span class="p">]),</span>
+              <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">get_thing</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">pend2</span><span class="p">])]</span>
+
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Father finished waiting.&quot;</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+
+<p>O exemplo abaixo é um pouco mais sofisticado, pois envolve a comunicação bidirecional em um pipe (o que é o
+default) e a comunicação entro o pais e seus vários filhos.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">random</span>
+
+<span class="n">sentinel</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+
+<span class="k">def</span> <span class="nf">waitabit</span><span class="p">():</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">()</span><span class="o">+</span><span class="mf">0.1</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">Computator</span><span class="p">(</span><span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">conn</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">c</span> <span class="o">=</span> <span class="n">conn</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span> <span class="c1"># Need a better termination control</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+            <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> got item: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">data</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">data</span> <span class="o">==</span> <span class="n">sentinel</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">res</span> <span class="o">+=</span> <span class="n">data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">nworker</span> <span class="o">=</span> <span class="mi">10</span>
+    <span class="n">ntask</span> <span class="o">=</span> <span class="mi">20</span> <span class="c1"># per worker</span>
+    <span class="n">procs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nworker</span><span class="p">):</span>
+        <span class="n">c1</span><span class="p">,</span> <span class="n">c2</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Pipe</span><span class="p">()</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">Computator</span><span class="p">(</span><span class="n">c2</span><span class="p">)</span>
+        <span class="n">procs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">p</span><span class="p">,</span> <span class="n">c1</span><span class="p">))</span>
+
+    <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+    <span class="n">data</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ntask</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span> 
+            <span class="n">c</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            <span class="n">data</span> <span class="o">+=</span><span class="mi">1</span>
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sentinel</span><span class="p">)</span>
+    <span class="n">res</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">res</span> <span class="o">+=</span> <span class="n">c</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Father totalled: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">res</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</code></pre></div></td></tr></table></div>
+
+<h2 id="sincronizacao">Sincronização</h2>
+<p>Todas as primitivas de sincronização que vimos para threads também estão disponíveis para o multiprocessamento,
+podemos serializar o acesso a um recurso com um <code>Lock()</code>, ou sincronizar os processos com <code>.Barrier()</code>, por exemplo.</p>
+<p>O exemplo abaixo mostra como podemos serializar o acesso à escrita de um arquivo. O programa verifica se
+o arquivo existe e o remove antes de começar a escrever, de forma que sempre é escrito um novo arquivo. É necessária
+uma certa lógica para garantir que apenas um thread realize esta operação.</p>
+<p>É claro que, para este caso específico, seria muito mais simples fazer esta verificação e a remoção do arquivo
+pré-existente no programa principal. Estamos fazendo a operação dentro dos processos para demonstrar o procedimento
+de como garantir que apenas um processo, que você não sabe qual é a priori, faça alguma coisa.</p>
+<p>Outra alternativa, mais simples do que esta, seria dar nomes conhecidos ao processo, e escolher um deles a priori
+para fazer o teste de existência e a remoção. Isto ainda necessitaria de uma sincronização, é claro.</p>
+<div class="codehilite"><table class="codehilitetable"><tr><td class="linenos"><div class="linenodiv"><pre><span class="normal"> 1</span>
+<span class="normal"> 2</span>
+<span class="normal"> 3</span>
+<span class="normal"> 4</span>
+<span class="normal"> 5</span>
+<span class="normal"> 6</span>
+<span class="normal"> 7</span>
+<span class="normal"> 8</span>
+<span class="normal"> 9</span>
+<span class="normal">10</span>
+<span class="normal">11</span>
+<span class="normal">12</span>
+<span class="normal">13</span>
+<span class="normal">14</span>
+<span class="normal">15</span>
+<span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="kn">import</span> <span class="nn">mp_support</span> <span class="k">as</span> <span class="nn">ms</span>
+<span class="kn">import</span> <span class="nn">datetime</span> <span class="k">as</span> <span class="nn">dt</span>
+<span class="kn">import</span> <span class="nn">os</span>
+
+<span class="k">class</span> <span class="nc">Escrevator</span><span class="p">(</span><span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fname</span><span class="p">,</span> <span class="n">lock</span><span class="p">,</span> <span class="n">semaphore</span><span class="p">,</span> <span class="n">event</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_l</span> <span class="o">=</span> <span class="n">lock</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_f</span> <span class="o">=</span> <span class="n">fname</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_s</span> <span class="o">=</span> <span class="n">semaphore</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_e</span> <span class="o">=</span> <span class="n">event</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_s</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span> <span class="c1"># one thread checks and deletes file</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_e</span><span class="o">.</span><span class="n">is_set</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_s</span><span class="o">.</span><span class="n">release</span><span class="p">()</span> <span class="c1"># file already erased</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_f</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_e</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_s</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;</span><span class="si">{name}</span><span class="s1">: </span><span class="si">{error}</span><span class="s1"> removing file </span><span class="si">{file}</span><span class="s1">&#39;</span><span class="o">.</span>\
+                        <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">error</span><span class="o">=</span><span class="n">e</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_f</span><span class="p">))</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_e</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_s</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_f</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">outf</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
+                <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="p">:</span>
+                    <span class="n">outf</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s1">&#39;</span><span class="si">{name}</span><span class="s1">: line=</span><span class="si">{line}</span><span class="s1">, time=</span><span class="si">{now}</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span>\
+                        <span class="nb">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">line</span><span class="o">=</span><span class="n">i</span><span class="p">,</span> <span class="n">now</span><span class="o">=</span><span class="n">dt</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()))</span>
+                    <span class="n">outf</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+            <span class="n">outf</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">nworker</span> <span class="o">=</span> <span class="mi">10</span>
+    <span class="n">lock</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+    <span class="n">cleared_file</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span> <span class="c1"># starts false</span>
+    <span class="n">semaphore</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Semaphore</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">procs</span> <span class="o">=</span> <span class="p">[</span> <span class="n">Escrevator</span><span class="p">(</span><span class="s1">&#39;lock_test.txt&#39;</span><span class="p">,</span> <span class="n">lock</span><span class="p">,</span> <span class="n">semaphore</span><span class="p">,</span> <span class="n">cleared_file</span><span class="p">)</span> \
+                                                     <span class="k">for</span> <span class="n">i</span>  <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nworker</span><span class="p">)</span> <span class="p">]</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">procs</span><span class="p">:</span>
+        <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+    <span class="n">ms</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Main process finished execution&#39;</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+
+<h2 id="referencias">Referências</h2>
+<ol>
+<li>Documentação do módulo <a href="https://docs.python.org/3.7/library/multiprocessing.html">multiprocessing</a>.</li>
+</ol>
+
+  </div>
+  <footer>
+    &copy; Copyright 2019 by Ramiro Brito Willmersdorf.
+  </footer>
+</body>
+<html>
